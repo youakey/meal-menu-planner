@@ -46,6 +46,7 @@ export type MenuEntry = {
   meal_type: MealType
   dish_id: UUID | null
   portions: number
+  variant_name: string | null
   created_at: string
   updated_at: string
 }
@@ -56,4 +57,23 @@ export type IngredientTotalsRow = {
   total_quantity: number
   display_unit: DishUsageUnit
   total_cost: number
+}
+
+export type CartItemKind = 'dish' | 'ingredient'
+
+export type CartItem = {
+  id: UUID
+  user_id: UUID
+  item_kind: CartItemKind
+  dish_id: UUID | null
+  ingredient_id: UUID | null
+  portions: number | null
+  quantity: number | null
+  quantity_unit: DishUsageUnit | null
+  source_menu_entry_id: UUID | null
+  title_override: string | null
+  created_at: string
+  updated_at: string
+  dish?: Dish | null
+  ingredient?: IngredientProduct | null
 }

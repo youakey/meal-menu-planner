@@ -1,11 +1,13 @@
-import type { Dish, DishIngredient, DishUsageUnit, IngredientBaseUnit, IngredientTotalsRow, MenuEntry } from './types'
+import type {
+  CartItem,
+  Dish,
+  DishIngredient,
+  DishUsageUnit,
+  IngredientBaseUnit,
+  IngredientTotalsRow,
+  MenuEntry,
+} from './types'
 import { round2 } from './utils'
-
-function convertToDisplayUnit(quantity: number, fromUnit: DishUsageUnit): number {
-  if (fromUnit === 'g') return quantity
-  if (fromUnit === 'pcs') return quantity
-  return quantity
-}
 
 function packageUnitToSameScaleAmount(amount: number, unit: IngredientBaseUnit): number {
   if (unit === 'kg') return amount * 1000
@@ -34,8 +36,9 @@ export function computeTotals(params: {
   menuEntries: MenuEntry[]
   dishes: Dish[]
   ingredients: DishIngredient[]
+  weekday?: number | null
 }): IngredientTotalsRow[] {
-  const { menuEntries, ingredients } = params
+  const { menuEntries, ingredients, weekday } = params
 
   const byDish = new Map<string, DishIngredient[]>()
   for (const ing of ingredients) {
@@ -47,7 +50,9 @@ export function computeTotals(params: {
   const totals = new Map<string, IngredientTotalsRow>()
 
   for (const entry of menuEntries) {
+    if (weekday && entry.weekday !== weekday) continue
     if (!entry.dish_id) continue
+
     const portions = Number(entry.portions ?? 0)
     if (portions <= 0) continue
 
@@ -55,14 +60,14 @@ export function computeTotals(params: {
     for (const ing of dishIngredients) {
       if (!ing.ingredient) continue
 
-      const key = ing.ingredient_id
+      const key = `${ing.ingredient_id}:${ing.usage_unit}`
       const existing = totals.get(key)
-      const totalQty = convertToDisplayUnit(Number(ing.quantity_per_portion ?? 0) * portions, ing.usage_unit)
+      const totalQty = Number(ing.quantity_per_portion ?? 0) * portions
       const totalCost = computeCostForIngredientUsage(ing, portions)
 
       if (!existing) {
         totals.set(key, {
-          ingredient_id: key,
+          ingredient_id: ing.ingredient_id,
           ingredient_name: ing.ingredient.name,
           total_quantity: totalQty,
           display_unit: ing.usage_unit,
@@ -75,13 +80,96 @@ export function computeTotals(params: {
     }
   }
 
-  return Array.from(totals.values())
+  return finalizeRows(Array.from(totals.values()))
+}
+
+export function computeTotalsFromCart(params: {
+  cartItems: CartItem[]
+  dishIngredients: DishIngredient[]
+}): IngredientTotalsRow[] {
+  const { cartItems, dishIngredients } = params
+  const byDish = new Map<string, DishIngredient[]>()
+
+  for (const row of dishIngredients) {
+    const arr = byDish.get(row.dish_id) ?? []
+    arr.push(row)
+    byDish.set(row.dish_id, arr)
+  }
+
+  const totals = new Map<string, IngredientTotalsRow>()
+
+  for (const item of cartItems) {
+    if (item.item_kind === 'dish' && item.dish_id) {
+      const portions = Number(item.portions ?? 0)
+      if (portions <= 0) continue
+
+      const rows = byDish.get(item.dish_id) ?? []
+      for (const ing of rows) {
+        if (!ing.ingredient) continue
+        const key = `${ing.ingredient_id}:${ing.usage_unit}`
+        const existing = totals.get(key)
+        const qty = Number(ing.quantity_per_portion ?? 0) * portions
+        const cost = computeCostForIngredientUsage(ing, portions)
+
+        if (!existing) {
+          totals.set(key, {
+            ingredient_id: ing.ingredient_id,
+            ingredient_name: ing.ingredient.name,
+            total_quantity: qty,
+            display_unit: ing.usage_unit,
+            total_cost: cost,
+          })
+        } else {
+          existing.total_quantity += qty
+          existing.total_cost += cost
+        }
+      }
+    }
+
+    if (item.item_kind === 'ingredient' && item.ingredient) {
+      const unit = item.quantity_unit ?? defaultCartUnit(item.ingredient.package_unit)
+      const qty = Number(item.quantity ?? 0)
+      if (qty <= 0) continue
+
+      let packAmount = Number(item.ingredient.package_amount ?? 0)
+      if (item.ingredient.package_unit === 'kg' && unit === 'g') packAmount *= 1000
+
+      const cost = packAmount > 0 ? (qty / packAmount) * Number(item.ingredient.package_price ?? 0) : 0
+      const key = `${item.ingredient_id}:${unit}`
+      const existing = totals.get(key)
+
+      if (!existing) {
+        totals.set(key, {
+          ingredient_id: item.ingredient_id!,
+          ingredient_name: item.title_override?.trim() || item.ingredient.name,
+          total_quantity: qty,
+          display_unit: unit,
+          total_cost: cost,
+        })
+      } else {
+        existing.total_quantity += qty
+        existing.total_cost += cost
+      }
+    }
+  }
+
+  return finalizeRows(Array.from(totals.values()))
+}
+
+function finalizeRows(rows: IngredientTotalsRow[]): IngredientTotalsRow[] {
+  return rows
     .map((row) => ({
       ...row,
       total_quantity: round2(row.total_quantity),
       total_cost: round2(row.total_cost),
     }))
     .sort((a, b) => a.ingredient_name.localeCompare(b.ingredient_name, 'ru'))
+}
+
+function defaultCartUnit(packageUnit: IngredientBaseUnit): DishUsageUnit {
+  if (packageUnit === 'pcs') return 'pcs'
+  if (packageUnit === 'l') return 'l'
+  return 'g'
 }
 
 export function computeGrandTotal(rows: IngredientTotalsRow[]): number {

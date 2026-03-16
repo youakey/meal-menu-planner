@@ -1,10 +1,15 @@
 import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { Pencil, Plus, ShoppingCart, Trash2 } from 'lucide-react'
 import { Layout } from '../components/Layout'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
-import { deleteIngredientProduct, fetchIngredientProducts, upsertIngredientProduct } from '../lib/api'
+import {
+  deleteIngredientProduct,
+  fetchIngredientProducts,
+  upsertCartItem,
+  upsertIngredientProduct,
+} from '../lib/api'
 import type { IngredientBaseUnit, IngredientKind, IngredientProduct } from '../lib/types'
 import { formatRub } from '../lib/utils'
 
@@ -32,17 +37,28 @@ export function IngredientsPage() {
     onError: (e: any) => toast.push(e?.message ?? 'Ошибка удаления ингредиента.', 'error'),
   })
 
+  const addToCartMut = useMutation({
+    mutationFn: (item: IngredientProduct) =>
+      upsertCartItem({
+        item_kind: 'ingredient',
+        ingredient_id: item.id,
+        quantity: item.kind === 'piece' ? 1 : item.kind === 'volume' ? 1 : 100,
+        quantity_unit: item.kind === 'piece' ? 'pcs' : item.kind === 'volume' ? 'l' : 'g',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cart_items'] })
+      toast.push('Ингредиент добавлен в корзину.', 'success')
+    },
+    onError: (e: any) => toast.push(e?.message ?? 'Ошибка добавления в корзину.', 'error'),
+  })
+
   return (
     <Layout title="База ингредиентов">
       <div className="grid gap-6 xl:grid-cols-[400px_1fr]">
-        <IngredientEditor
-          key={editing?.id ?? 'new'}
-          initial={editing}
-          onDone={() => setEditing(null)}
-        />
+        <IngredientEditor key={editing?.id ?? 'new'} initial={editing} onDone={() => setEditing(null)} />
 
         <div className="glass-card p-6">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="section-subtitle">Каталог</div>
               <div className="section-title mt-1">Ваши ингредиенты</div>
@@ -64,14 +80,17 @@ export function IngredientsPage() {
                 key={item.id}
                 className="rounded-3xl border border-white/10 bg-black/10 p-5 transition-all duration-300 hover:border-amber-300/20 hover:bg-white/[0.06]"
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="text-lg font-semibold text-amber-50">{item.name}</div>
                     <div className="mt-1 text-sm text-amber-100/60">
                       {kindLabel(item.kind)} • {item.package_amount} {unitLabel(item.package_unit)} • {formatRub(item.package_price)}
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <button className="btn-secondary px-3 py-2" onClick={() => addToCartMut.mutate(item)}>
+                      <ShoppingCart size={16} />
+                    </button>
                     <button className="btn-secondary px-3 py-2" onClick={() => setEditing(item)}>
                       <Pencil size={16} />
                     </button>
@@ -89,9 +108,7 @@ export function IngredientsPage() {
       <ConfirmDialog
         open={!!toDelete}
         title="Удалить ингредиент?"
-        description={
-          toDelete ? `Ингредиент «${toDelete.name}» будет удален из базы. В блюдах его тоже придется заменить.` : ''
-        }
+        description={toDelete ? `Ингредиент «${toDelete.name}» будет удален из базы. В блюдах его тоже придется заменить.` : ''}
         onClose={() => setToDelete(null)}
         onConfirm={() => {
           if (toDelete) delMut.mutate(toDelete.id)
@@ -165,21 +182,14 @@ function IngredientEditor({
       <div className="mt-5 grid gap-4">
         <div>
           <label className="mb-2 block text-sm text-amber-100/70">Название ингредиента</label>
-          <input
-            className="glass-input w-full"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Например: Мука"
-          />
+          <input className="glass-input w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder="Например: Мука" />
         </div>
 
         <div>
           <label className="mb-2 block text-sm text-amber-100/70">Тип</label>
           <select className="glass-input w-full" value={kind} onChange={(e) => setKind(e.target.value as IngredientKind)}>
             {kindOptions.map((opt) => (
-              <option key={opt.value} value={opt.value} className="bg-[#18161b]">
-                {opt.label}
-              </option>
+              <option key={opt.value} value={opt.value} className="bg-[#18161b]">{opt.label}</option>
             ))}
           </select>
         </div>
@@ -187,25 +197,13 @@ function IngredientEditor({
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="mb-2 block text-sm text-amber-100/70">Количество в упаковке</label>
-            <input
-              className="glass-input w-full"
-              value={packageAmount}
-              onChange={(e) => setPackageAmount(e.target.value)}
-              inputMode="decimal"
-              placeholder="1"
-            />
+            <input className="glass-input w-full" value={packageAmount} onChange={(e) => setPackageAmount(e.target.value)} inputMode="decimal" placeholder="1" />
           </div>
           <div>
             <label className="mb-2 block text-sm text-amber-100/70">Единица</label>
-            <select
-              className="glass-input w-full"
-              value={packageUnit}
-              onChange={(e) => setPackageUnit(e.target.value as IngredientBaseUnit)}
-            >
+            <select className="glass-input w-full" value={packageUnit} onChange={(e) => setPackageUnit(e.target.value as IngredientBaseUnit)}>
               {unitOptionsForKind(kind).map((opt) => (
-                <option key={opt.value} value={opt.value} className="bg-[#18161b]">
-                  {opt.label}
-                </option>
+                <option key={opt.value} value={opt.value} className="bg-[#18161b]">{opt.label}</option>
               ))}
             </select>
           </div>
@@ -213,13 +211,7 @@ function IngredientEditor({
 
         <div>
           <label className="mb-2 block text-sm text-amber-100/70">Стоимость упаковки</label>
-          <input
-            className="glass-input w-full"
-            value={packagePrice}
-            onChange={(e) => setPackagePrice(e.target.value)}
-            inputMode="decimal"
-            placeholder="0.00"
-          />
+          <input className="glass-input w-full" value={packagePrice} onChange={(e) => setPackagePrice(e.target.value)} inputMode="decimal" placeholder="0.00" />
         </div>
       </div>
 
@@ -228,11 +220,7 @@ function IngredientEditor({
           <Plus size={16} />
           {initial ? 'Сохранить изменения' : 'Добавить в базу'}
         </button>
-        {initial && (
-          <button className="btn-secondary" onClick={onDone}>
-            Отмена
-          </button>
-        )}
+        {initial && <button className="btn-secondary" onClick={onDone}>Отмена</button>}
       </div>
     </div>
   )
@@ -241,10 +229,7 @@ function IngredientEditor({
 function unitOptionsForKind(kind: IngredientKind): Array<{ value: IngredientBaseUnit; label: string }> {
   if (kind === 'piece') return [{ value: 'pcs', label: 'шт' }]
   if (kind === 'volume') return [{ value: 'l', label: 'л' }]
-  return [
-    { value: 'kg', label: 'кг' },
-    { value: 'g', label: 'г' },
-  ]
+  return [{ value: 'kg', label: 'кг' }, { value: 'g', label: 'г' }]
 }
 
 function unitLabel(unit: IngredientBaseUnit) {
