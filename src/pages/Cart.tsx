@@ -1,4 +1,5 @@
-imXport React from 'react'
+// src/pages/Cart.tsx
+import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Layout } from '../components/Layout'
 import { useToast } from '../components/Toast'
@@ -18,7 +19,10 @@ export function CartPage() {
   const qc = useQueryClient()
 
   const cartQ = useQuery({ queryKey: ['cart_items'], queryFn: fetchCartItems })
-  const dishIngredientsQ = useQuery({ queryKey: ['dish_ingredients_all'], queryFn: () => fetchDishIngredients(undefined) })
+  const dishIngredientsQ = useQuery({
+    queryKey: ['dish_ingredients_all'],
+    queryFn: () => fetchDishIngredients(undefined),
+  })
 
   const updateMut = useMutation({
     mutationFn: ({
@@ -112,12 +116,21 @@ export function CartPage() {
           </div>
 
           <div className="mt-5 space-y-3">
-            {rows.length === 0 && <div className="text-sm text-amber-100/55">Добавьте позиции в корзину, затем здесь появится расчет.</div>}
+            {rows.length === 0 && (
+              <div className="text-sm text-amber-100/55">
+                Добавьте позиции в корзину, затем здесь появится расчет.
+              </div>
+            )}
 
             {rows.map((row) => (
-              <div key={`${row.ingredient_id}:${row.display_unit}`} className="rounded-2xl border border-white/10 bg-black/10 p-4">
+              <div
+                key={`${row.ingredient_id}:${row.display_unit}`}
+                className="rounded-2xl border border-white/10 bg-black/10 p-4"
+              >
                 <div className="font-medium text-amber-50">{row.ingredient_name}</div>
-                <div className="mt-1 text-sm text-amber-100/60">{formatQty(row.total_quantity, row.display_unit)}</div>
+                <div className="mt-1 text-sm text-amber-100/60">
+                  {formatQty(row.total_quantity, row.display_unit)}
+                </div>
                 <div className="mt-1 text-sm text-amber-100/85">{formatRub(row.total_cost)}</div>
               </div>
             ))}
@@ -134,7 +147,9 @@ function CartItemCard({
   onDelete,
 }: {
   item: CartItem
-  onPatch: (patch: Partial<Pick<CartItem, 'portions' | 'quantity' | 'quantity_unit' | 'title_override'>>) => void
+  onPatch: (
+    patch: Partial<Pick<CartItem, 'portions' | 'quantity' | 'quantity_unit' | 'title_override'>>
+  ) => void
   onDelete: () => void
 }) {
   if (item.item_kind === 'dish') {
@@ -142,7 +157,9 @@ function CartItemCard({
       <div className="rounded-3xl border border-white/10 bg-black/10 p-4">
         <div className="grid gap-4 lg:grid-cols-[1fr_160px_auto]">
           <div>
-            <div className="text-lg font-semibold text-amber-50">{item.title_override?.trim() || item.dish?.name || 'Блюдо'}</div>
+            <div className="text-lg font-semibold text-amber-50">
+              {item.title_override?.trim() || item.dish?.name || 'Блюдо'}
+            </div>
             <div className="mt-1 text-sm text-amber-100/55">Позиция добавлена из недельного меню</div>
           </div>
           <div>
@@ -157,7 +174,9 @@ function CartItemCard({
             />
           </div>
           <div className="flex items-end">
-            <button className="btn-danger w-full" onClick={onDelete}>Удалить</button>
+            <button className="btn-danger w-full" onClick={onDelete}>
+              Удалить
+            </button>
           </div>
         </div>
       </div>
@@ -194,12 +213,16 @@ function CartItemCard({
             onChange={(e) => onPatch({ quantity_unit: e.target.value as any })}
           >
             {unitOptions(item.ingredient?.package_unit).map((opt) => (
-              <option key={opt.value} value={opt.value} className="bg-[#18161b]">{opt.label}</option>
+              <option key={opt.value} value={opt.value} className="bg-[#18161b]">
+                {opt.label}
+              </option>
             ))}
           </select>
         </div>
         <div className="flex items-end">
-          <button className="btn-danger w-full" onClick={onDelete}>Удалить</button>
+          <button className="btn-danger w-full" onClick={onDelete}>
+            Удалить
+          </button>
         </div>
       </div>
     </div>
@@ -212,7 +235,9 @@ function defaultUnit(packageUnit?: string | null) {
   return 'g'
 }
 
-function unitOptions(packageUnit?: string | null): Array<{ value: 'g' | 'pcs' | 'l'; label: string }> {
+function unitOptions(
+  packageUnit?: string | null
+): Array<{ value: 'g' | 'pcs' | 'l'; label: string }> {
   if (packageUnit === 'pcs') return [{ value: 'pcs', label: 'шт' }]
   if (packageUnit === 'l') return [{ value: 'l', label: 'л' }]
   return [{ value: 'g', label: 'г' }]
