@@ -25,6 +25,16 @@ export type IngredientProduct = {
   updated_at: string
 }
 
+export type MenuEvent = {
+  id: UUID
+  user_id: UUID
+  name: string
+  notes: string | null
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type DishIngredient = {
   id: UUID
   dish_id: UUID
@@ -42,6 +52,7 @@ export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'late_snack'
 export type MenuEntry = {
   id: UUID
   user_id: UUID
+  event_id: UUID
   weekday: number
   meal_type: MealType
   dish_id: UUID | null

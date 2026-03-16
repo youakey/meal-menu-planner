@@ -8,6 +8,7 @@ import type {
   IngredientKind,
   IngredientProduct,
   MenuEntry,
+  MenuEvent,
   MealType,
   UUID,
 } from './types'
@@ -18,13 +19,22 @@ export async function getSessionUserId(): Promise<string | null> {
 }
 
 export async function fetchDishes(): Promise<Dish[]> {
-  const { data, error } = await supabase.from('dishes').select('*').order('created_at', { ascending: false })
+  const { data, error } = await supabase
+    .from('dishes')
+    .select('*')
+    .order('created_at', { ascending: false })
+
   if (error) throw error
   return (data ?? []) as Dish[]
 }
 
 export async function fetchDish(dishId: UUID): Promise<Dish | null> {
-  const { data, error } = await supabase.from('dishes').select('*').eq('id', dishId).maybeSingle()
+  const { data, error } = await supabase
+    .from('dishes')
+    .select('*')
+    .eq('id', dishId)
+    .maybeSingle()
+
   if (error) throw error
   return (data ?? null) as Dish | null
 }
@@ -97,6 +107,43 @@ export async function deleteIngredientProduct(id: UUID): Promise<void> {
   if (error) throw error
 }
 
+export async function fetchMenuEvents(): Promise<MenuEvent[]> {
+  const { data, error } = await supabase
+    .from('menu_events')
+    .select('*')
+    .order('is_default', { ascending: false })
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as MenuEvent[]
+}
+
+export async function upsertMenuEvent(input: {
+  id?: UUID
+  name: string
+  notes?: string | null
+  is_default?: boolean
+}): Promise<MenuEvent> {
+  const { data, error } = await supabase
+    .from('menu_events')
+    .upsert({
+      id: input.id,
+      name: input.name,
+      notes: input.notes ?? null,
+      is_default: input.is_default ?? false,
+    })
+    .select('*')
+    .single()
+
+  if (error) throw error
+  return data as MenuEvent
+}
+
+export async function deleteMenuEvent(id: UUID): Promise<void> {
+  const { error } = await supabase.from('menu_events').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function fetchDishIngredients(dishId?: UUID): Promise<DishIngredient[]> {
   let q = supabase
     .from('dish_ingredients')
@@ -165,11 +212,10 @@ export async function fetchMenuEntries(): Promise<MenuEntry[]> {
   const { data, error } = await supabase
     .from('menu_entries')
     .select('*')
-    .order('weekday', { ascending: true })
-    .order('meal_type', { ascending: true })
     .order('created_at', { ascending: true })
 
   if (error) throw error
+
   return ((data ?? []) as any[]).map((row) => ({
     ...row,
     portions: Number(row.portions ?? 0),
@@ -177,6 +223,7 @@ export async function fetchMenuEntries(): Promise<MenuEntry[]> {
 }
 
 export async function addMenuEntry(params: {
+  event_id: UUID
   weekday: number
   meal_type: MealType
   dish_id: UUID | null
@@ -186,6 +233,7 @@ export async function addMenuEntry(params: {
   const { data, error } = await supabase
     .from('menu_entries')
     .insert({
+      event_id: params.event_id,
       weekday: params.weekday,
       meal_type: params.meal_type,
       dish_id: params.dish_id,

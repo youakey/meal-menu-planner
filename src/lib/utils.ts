@@ -11,10 +11,6 @@ export function formatRub(n: number): string {
   return `${v.toFixed(2)} руб.`
 }
 
-export function normalizeName(name: string): string {
-  return name.trim().replace(/\s+/g, ' ').toLowerCase()
-}
-
 export function formatQty(n: number, unit: 'g' | 'pcs' | 'l'): string {
   const v = round2(n)
   if (unit === 'g') return `${v} г`
@@ -65,7 +61,7 @@ export function mealTypeLabel(mealType: string): string {
     case 'dinner':
       return 'Ужин'
     case 'late_snack':
-      return 'Перекусывание'
+      return 'Перекус'
     default:
       return mealType
   }

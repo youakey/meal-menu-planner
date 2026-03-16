@@ -6,9 +6,9 @@ import { MainPage } from './pages/Main'
 import { MenuPage } from './pages/Menu'
 import { CatalogPage } from './pages/Catalog'
 import { DishEditPage } from './pages/DishEdit'
-import { SettingsPage } from './pages/Settings'
 import { SummaryPage } from './pages/Summary'
 import { IngredientsPage } from './pages/ingredients'
+import { CartPage } from './pages/Cart'
 
 export function App() {
   return (
@@ -57,10 +57,10 @@ export function App() {
         }
       />
       <Route
-        path="/settings"
+        path="/cart"
         element={
           <ProtectedRoute>
-            <SettingsPage />
+            <CartPage />
           </ProtectedRoute>
         }
       />

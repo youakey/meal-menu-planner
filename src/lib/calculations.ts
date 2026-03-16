@@ -2,7 +2,6 @@ import type {
   CartItem,
   Dish,
   DishIngredient,
-  DishUsageUnit,
   IngredientBaseUnit,
   IngredientTotalsRow,
   MenuEntry,
@@ -21,7 +20,10 @@ function computeCostForIngredientUsage(ing: DishIngredient, portions = 1): numbe
   if (!ingredient) return 0
 
   const qty = Number(ing.quantity_per_portion ?? 0) * portions
-  const packAmount = packageUnitToSameScaleAmount(Number(ingredient.package_amount ?? 0), ingredient.package_unit)
+  const packAmount = packageUnitToSameScaleAmount(
+    Number(ingredient.package_amount ?? 0),
+    ingredient.package_unit
+  )
   const packPrice = Number(ingredient.package_price ?? 0)
 
   if (!packAmount || !packPrice || qty <= 0) return 0
@@ -36,9 +38,10 @@ export function computeTotals(params: {
   menuEntries: MenuEntry[]
   dishes: Dish[]
   ingredients: DishIngredient[]
+  eventId?: string | null
   weekday?: number | null
 }): IngredientTotalsRow[] {
-  const { menuEntries, ingredients, weekday } = params
+  const { menuEntries, ingredients, weekday, eventId } = params
 
   const byDish = new Map<string, DishIngredient[]>()
   for (const ing of ingredients) {
@@ -50,6 +53,7 @@ export function computeTotals(params: {
   const totals = new Map<string, IngredientTotalsRow>()
 
   for (const entry of menuEntries) {
+    if (eventId && entry.event_id !== eventId) continue
     if (weekday && entry.weekday !== weekday) continue
     if (!entry.dish_id) continue
 
@@ -166,7 +170,7 @@ function finalizeRows(rows: IngredientTotalsRow[]): IngredientTotalsRow[] {
     .sort((a, b) => a.ingredient_name.localeCompare(b.ingredient_name, 'ru'))
 }
 
-function defaultCartUnit(packageUnit: IngredientBaseUnit): DishUsageUnit {
+function defaultCartUnit(packageUnit: IngredientBaseUnit) {
   if (packageUnit === 'pcs') return 'pcs'
   if (packageUnit === 'l') return 'l'
   return 'g'

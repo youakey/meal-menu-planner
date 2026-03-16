@@ -6,13 +6,16 @@ import { useToast } from '../components/Toast'
 import {
   addMenuEntry,
   deleteMenuEntry,
+  deleteMenuEvent,
   fetchDishes,
   fetchMenuEntries,
+  fetchMenuEvents,
   upsertCartItem,
+  upsertMenuEvent,
   updateMenuEntry,
 } from '../lib/api'
 import type { MealType, MenuEntry } from '../lib/types'
-import { formatQty, mealTypeLabel, shortWeekdayLabel, weekdayLabel } from '../lib/utils'
+import { mealTypeLabel, shortWeekdayLabel, weekdayLabel } from '../lib/utils'
 
 const weekdays = [1, 2, 3, 4, 5]
 const mealSections: MealType[] = ['breakfast', 'lunch', 'dinner', 'late_snack']
@@ -20,21 +23,64 @@ const mealSections: MealType[] = ['breakfast', 'lunch', 'dinner', 'late_snack']
 export function MenuPage() {
   const toast = useToast()
   const qc = useQueryClient()
+
   const [weekday, setWeekday] = React.useState<number>(1)
   const [mode, setMode] = React.useState<'view' | 'edit'>('view')
+  const [selectedEventId, setSelectedEventId] = React.useState<string>('')
 
   const dishesQ = useQuery({ queryKey: ['dishes'], queryFn: fetchDishes })
+  const eventsQ = useQuery({ queryKey: ['menu_events'], queryFn: fetchMenuEvents })
   const menuQ = useQuery({ queryKey: ['menu_entries'], queryFn: fetchMenuEntries })
 
+  React.useEffect(() => {
+    const events = eventsQ.data ?? []
+    if (!events.length) {
+      setSelectedEventId('')
+      return
+    }
+
+    if (!selectedEventId || !events.some((e) => e.id === selectedEventId)) {
+      const preferred = events.find((e) => e.is_default) ?? events[0]
+      setSelectedEventId(preferred.id)
+    }
+  }, [eventsQ.data, selectedEventId])
+
+  const createEventMut = useMutation({
+    mutationFn: (name: string) =>
+      upsertMenuEvent({
+        name,
+        is_default: (eventsQ.data?.length ?? 0) === 0,
+      }),
+    onSuccess: (event) => {
+      qc.invalidateQueries({ queryKey: ['menu_events'] })
+      setSelectedEventId(event.id)
+      toast.push('Мероприятие добавлено.', 'success')
+    },
+    onError: (e: any) => toast.push(e?.message ?? 'Ошибка создания мероприятия.', 'error'),
+  })
+
+  const deleteEventMut = useMutation({
+    mutationFn: deleteMenuEvent,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['menu_events'] })
+      qc.invalidateQueries({ queryKey: ['menu_entries'] })
+      toast.push('Мероприятие удалено.', 'success')
+    },
+    onError: (e: any) => toast.push(e?.message ?? 'Ошибка удаления мероприятия.', 'error'),
+  })
+
   const addMut = useMutation({
-    mutationFn: (mealType: MealType) =>
-      addMenuEntry({
+    mutationFn: (mealType: MealType) => {
+      if (!selectedEventId) throw new Error('Сначала создайте или выберите мероприятие.')
+      return addMenuEntry({
+        event_id: selectedEventId,
         weekday,
         meal_type: mealType,
         dish_id: null,
         portions: 1,
         variant_name: '',
-      }),
+      })
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['menu_entries'] })
       toast.push('Позиция добавлена в меню.', 'success')
@@ -78,8 +124,24 @@ export function MenuPage() {
     onError: (e: any) => toast.push(e?.message ?? 'Ошибка добавления в корзину.', 'error'),
   })
 
+  const events = eventsQ.data ?? []
   const dishes = dishesQ.data ?? []
-  const menu = (menuQ.data ?? []).filter((row) => row.weekday === weekday)
+  const menu = (menuQ.data ?? []).filter(
+    (row) => row.event_id === selectedEventId && row.weekday === weekday
+  )
+
+  function onCreateEvent() {
+    const name = window.prompt('Название мероприятия')
+    if (!name?.trim()) return
+    createEventMut.mutate(name.trim())
+  }
+
+  function onDeleteCurrentEvent() {
+    const current = events.find((e) => e.id === selectedEventId)
+    if (!current) return
+    if (!window.confirm(`Удалить мероприятие «${current.name}»?`)) return
+    deleteEventMut.mutate(current.id)
+  }
 
   return (
     <Layout title="Меню недели">
@@ -105,6 +167,34 @@ export function MenuPage() {
               <PencilLine size={16} />
               Редактирование
             </button>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-2 text-sm text-amber-100/70">Мероприятия</div>
+          <div className="flex flex-wrap gap-2">
+            {events.map((event) => (
+              <button
+                key={event.id}
+                onClick={() => setSelectedEventId(event.id)}
+                className={
+                  selectedEventId === event.id
+                    ? 'rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-2.5 text-sm font-semibold text-[#20150f]'
+                    : 'rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-amber-50 hover:bg-white/10'
+                }
+              >
+                {event.name}
+              </button>
+            ))}
+            <button className="btn-secondary px-4 py-2.5" onClick={onCreateEvent}>
+              <Plus size={16} />
+              Добавить мероприятие
+            </button>
+            {selectedEventId && events.length > 1 && (
+              <button className="btn-danger px-4 py-2.5" onClick={onDeleteCurrentEvent}>
+                Удалить мероприятие
+              </button>
+            )}
           </div>
         </div>
 
@@ -153,9 +243,15 @@ export function MenuPage() {
                     entry={entry}
                     mode={mode}
                     dishes={dishes}
-                    onChangeDish={(dishId) => updateMut.mutate({ id: entry.id, patch: { dish_id: dishId || null } })}
-                    onChangePortions={(portions) => updateMut.mutate({ id: entry.id, patch: { portions } })}
-                    onChangeVariant={(variant_name) => updateMut.mutate({ id: entry.id, patch: { variant_name } })}
+                    onChangeDish={(dishId) =>
+                      updateMut.mutate({ id: entry.id, patch: { dish_id: dishId || null } })
+                    }
+                    onChangePortions={(portions) =>
+                      updateMut.mutate({ id: entry.id, patch: { portions } })
+                    }
+                    onChangeVariant={(variant_name) =>
+                      updateMut.mutate({ id: entry.id, patch: { variant_name } })
+                    }
                     onDelete={() => deleteMut.mutate(entry.id)}
                     onAddToCart={() => addToCartMut.mutate(entry)}
                   />
@@ -195,7 +291,9 @@ function MenuEntryCard({
       <div className="rounded-3xl border border-white/10 bg-black/10 p-4 md:p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="text-lg font-semibold text-amber-50">{selectedDish?.name ?? 'Блюдо не выбрано'}</div>
+            <div className="text-lg font-semibold text-amber-50">
+              {selectedDish?.name ?? 'Блюдо не выбрано'}
+            </div>
             <div className="mt-1 text-sm text-amber-100/60">
               {entry.variant_name?.trim() ? `Вариация: ${entry.variant_name.trim()} • ` : ''}
               Порций: {entry.portions}
@@ -215,10 +313,18 @@ function MenuEntryCard({
       <div className="grid gap-4 lg:grid-cols-[1.2fr_180px_1fr_auto]">
         <div>
           <label className="mb-2 block text-sm text-amber-100/70">Блюдо</label>
-          <select value={entry.dish_id ?? ''} onChange={(e) => onChangeDish(e.target.value)} className="glass-input w-full">
-            <option value="" className="bg-[#18161b]">Выберите блюдо</option>
+          <select
+            value={entry.dish_id ?? ''}
+            onChange={(e) => onChangeDish(e.target.value)}
+            className="glass-input w-full"
+          >
+            <option value="" disabled className="bg-[#18161b]">
+              Выберите блюдо
+            </option>
             {dishes.map((dish) => (
-              <option key={dish.id} value={dish.id} className="bg-[#18161b]">{dish.name}</option>
+              <option key={dish.id} value={dish.id} className="bg-[#18161b]">
+                {dish.name}
+              </option>
             ))}
           </select>
         </div>
@@ -256,7 +362,8 @@ function MenuEntryCard({
       </div>
 
       <div className="mt-3 text-xs text-amber-100/45">
-        Быстрый просмотр: {selectedDish?.name ?? 'не выбрано'} • {formatQty(entry.portions, 'pcs')} {entry.variant_name?.trim() ? `• ${entry.variant_name.trim()}` : ''}
+        Быстрый просмотр: {selectedDish?.name ?? 'не выбрано'} • {entry.portions} порц.
+        {entry.variant_name?.trim() ? ` • ${entry.variant_name.trim()}` : ''}
       </div>
     </div>
   )

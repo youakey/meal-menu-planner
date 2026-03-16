@@ -13,6 +13,7 @@ export function LoginPage() {
   const [email, setEmail] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [loading, setLoading] = React.useState(false)
+  const [signupNotice, setSignupNotice] = React.useState('')
 
   React.useEffect(() => {
     if (session) navigate('/main', { replace: true })
@@ -44,7 +45,10 @@ export function LoginPage() {
         })
         if (error) throw error
 
-        toast.push('Аккаунт создан. Теперь войдите.', 'success')
+        setSignupNotice(
+          'На вашу почту отправлена ссылка для подтверждения аккаунта. Перейдите по ней, затем вернитесь на сайт и войдите.'
+        )
+        toast.push('Письмо для подтверждения отправлено.', 'success')
         setMode('login')
       }
     } catch (err: any) {
@@ -67,6 +71,12 @@ export function LoginPage() {
               : 'Создайте аккаунт, чтобы хранить данные в своем профиле.'}
           </div>
         </div>
+
+        {signupNotice && (
+          <div className="glass-card mb-4 border-amber-300/20 bg-amber-400/10 p-4 text-sm leading-7 text-amber-50">
+            {signupNotice}
+          </div>
+        )}
 
         <form onSubmit={onSubmit} className="glass-card p-6 md:p-8">
           <label className="block text-sm font-medium text-amber-100/75">Почта</label>
@@ -101,7 +111,10 @@ export function LoginPage() {
             <button
               type="button"
               className="transition-colors hover:text-amber-50 underline underline-offset-4"
-              onClick={() => setMode((m) => (m === 'login' ? 'signup' : 'login'))}
+              onClick={() => {
+                setMode((m) => (m === 'login' ? 'signup' : 'login'))
+                setSignupNotice('')
+              }}
             >
               {mode === 'login' ? 'Нет аккаунта? Регистрация' : 'Уже есть аккаунт? Войти'}
             </button>
@@ -117,16 +130,6 @@ export function LoginPage() {
             </a>
           </div>
         </form>
-
-        <div className="mt-4 text-xs leading-6 text-amber-100/45">
-          Примечание: для работы приложения нужны переменные окружения
-          {' '}
-          <span className="text-amber-100/60">VITE_SUPABASE_URL</span>
-          {' '}
-          и
-          {' '}
-          <span className="text-amber-100/60">VITE_SUPABASE_ANON_KEY</span>.
-        </div>
       </div>
     </div>
   )
