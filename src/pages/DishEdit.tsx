@@ -14,7 +14,7 @@ import {
   upsertDishIngredient,
 } from '../lib/api'
 import { computeDishCostPerPortion } from '../lib/calculations'
-import { formatQty, formatRub, round2 } from '../lib/utils'
+import { formatRub, matchesSearchTokens, round2 } from '../lib/utils'
 import type { DishIngredient, DishUsageUnit, IngredientProduct } from '../lib/types'
 
 export function DishEditPage() {
@@ -25,8 +25,15 @@ export function DishEditPage() {
   const qc = useQueryClient()
 
   const dishQ = useQuery({ queryKey: ['dish', id], queryFn: () => fetchDish(id), enabled: !!id })
-  const rowsQ = useQuery({ queryKey: ['dish_ingredients', id], queryFn: () => fetchDishIngredients(id), enabled: !!id })
-  const ingredientsQ = useQuery({ queryKey: ['ingredient_products'], queryFn: fetchIngredientProducts })
+  const rowsQ = useQuery({
+    queryKey: ['dish_ingredients', id],
+    queryFn: () => fetchDishIngredients(id),
+    enabled: !!id,
+  })
+  const ingredientsQ = useQuery({
+    queryKey: ['ingredient_products'],
+    queryFn: fetchIngredientProducts,
+  })
 
   const [name, setName] = React.useState('')
   const [notes, setNotes] = React.useState('')
@@ -40,7 +47,12 @@ export function DishEditPage() {
   }, [dishQ.data?.id])
 
   const saveDishMut = useMutation({
-    mutationFn: () => upsertDish({ id, name: name.trim() || 'Без названия', notes: notes.trim() || null }),
+    mutationFn: () =>
+      upsertDish({
+        id,
+        name: name.trim() || 'Без названия',
+        notes: notes.trim() || null,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['dishes'] })
       qc.invalidateQueries({ queryKey: ['dish', id] })
@@ -56,7 +68,7 @@ export function DishEditPage() {
       return upsertDishIngredient({
         dish_id: id,
         ingredient_id: first.id,
-        quantity_per_portion: 100,
+        quantity_per_portion: first.kind === 'piece' ? 1 : first.kind === 'volume' ? 0.1 : 100,
         usage_unit: defaultUsageUnit(first),
       })
     },
@@ -85,50 +97,52 @@ export function DishEditPage() {
 
   return (
     <Layout title="Редактирование блюда">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <button onClick={() => navigate(-1)} className="btn-secondary">
-          <ArrowLeft size={16} />
-          Назад
-        </button>
-        <Link to="/ingredients" className="btn-secondary">
-          Перейти к базе ингредиентов
-        </Link>
-      </div>
-
-      <div className="glass-card p-6">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="mb-2 block text-sm text-amber-100/70">Название блюда</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="glass-input w-full"
-              placeholder="Например: Венские вафли"
-            />
-          </div>
-          <div>
-            <label className="mb-2 block text-sm text-amber-100/70">Заметки</label>
-            <input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="glass-input w-full"
-              placeholder="Например: семейный завтрак"
-            />
-          </div>
+      <div className="sticky top-[72px] z-10 -mx-1 px-1 pb-4 backdrop-blur-md">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <button onClick={() => navigate(-1)} className="btn-secondary">
+            <ArrowLeft size={16} />
+            Назад
+          </button>
+          <Link to="/ingredients" className="btn-secondary">
+            Перейти к базе ингредиентов
+          </Link>
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <button onClick={() => saveDishMut.mutate()} className="btn-primary">
-            Сохранить блюдо
-          </button>
-          <button onClick={() => addRowMut.mutate()} className="btn-secondary">
-            <Plus size={16} />
-            Добавить ингредиент
-          </button>
+        <div className="glass-card p-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm text-amber-100/70">Название блюда</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="glass-input w-full"
+                placeholder="Например: Венские вафли"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm text-amber-100/70">Заметки</label>
+              <input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="glass-input w-full"
+                placeholder="Например: семейный завтрак"
+              />
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button onClick={() => saveDishMut.mutate()} className="btn-primary">
+              Сохранить блюдо
+            </button>
+            <button onClick={() => addRowMut.mutate()} className="btn-secondary">
+              <Plus size={16} />
+              Добавить ингредиент
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_340px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="glass-card p-6">
           <div className="section-subtitle">Состав блюда</div>
           <div className="section-title mt-1">Ингредиенты на порцию</div>
@@ -161,7 +175,9 @@ export function DishEditPage() {
           </div>
 
           <div className="mt-5 text-sm leading-7 text-amber-100/60">
-            Теперь блюдо не хранит собственную базу ингредиентов. Оно только ссылается на ингредиенты из общего каталога и знает, сколько каждого ингредиента нужно на одну порцию.
+            Теперь блюдо не хранит собственную базу ингредиентов. Оно только ссылается на
+            ингредиенты из общего каталога и знает, сколько каждого ингредиента нужно на одну
+            порцию.
           </div>
         </div>
       </div>
@@ -191,7 +207,9 @@ function DishIngredientRow({
   const toast = useToast()
   const qc = useQueryClient()
 
-  const currentIngredient = row.ingredient ?? ingredientOptions.find((i) => i.id === row.ingredient_id) ?? null
+  const currentIngredient =
+    row.ingredient ?? ingredientOptions.find((i) => i.id === row.ingredient_id) ?? null
+
   const [ingredientId, setIngredientId] = React.useState(row.ingredient_id)
   const [quantity, setQuantity] = React.useState(String(row.quantity_per_portion))
   const [usageUnit, setUsageUnit] = React.useState<DishUsageUnit>(row.usage_unit)
@@ -226,34 +244,27 @@ function DishIngredientRow({
   })
 
   const selectedIngredient = ingredientOptions.find((i) => i.id === ingredientId) ?? currentIngredient
+
   const currentCost = selectedIngredient
     ? estimateCost(selectedIngredient, Number(quantity.replace(',', '.')), usageUnit)
     : 0
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-black/10 p-5 transition-all duration-300 hover:border-amber-300/20">
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_180px_180px_1fr]">
+    <div className="rounded-3xl border border-white/10 bg-black/10 p-5">
+      <div className="grid gap-4 xl:grid-cols-[1.4fr_180px_180px_1fr_auto]">
         <div>
           <label className="mb-2 block text-sm text-amber-100/70">Ингредиент из базы</label>
-          <select
-            className="glass-input w-full"
+          <SearchableIngredientSelect
+            ingredients={ingredientOptions}
             value={ingredientId}
-            onChange={(e) => {
-              const nextId = e.target.value
+            onChange={(nextId) => {
               const nextIngredient = ingredientOptions.find((item) => item.id === nextId)
               setIngredientId(nextId)
               if (nextIngredient) {
                 setUsageUnit(defaultUsageUnit(nextIngredient))
-                setQuantity(nextIngredient.kind === 'piece' ? '1' : nextIngredient.kind === 'volume' ? '0.1' : '100')
               }
             }}
-          >
-            {ingredientOptions.map((item) => (
-              <option key={item.id} value={item.id} className="bg-[#18161b]">
-                {item.name}
-              </option>
-            ))}
-          </select>
+          />
         </div>
 
         <div>
@@ -285,28 +296,108 @@ function DishIngredientRow({
           <label className="mb-2 block text-sm text-amber-100/70">Стоимость на порцию</label>
           <div className="glass-input flex min-h-[50px] items-center justify-between">
             <span className="text-amber-100/60">
-              {selectedIngredient ? formatQty(Number(quantity.replace(',', '.')) || 0, usageUnit) : '—'}
+              {selectedIngredient ? `${quantity || 0} ${unitLabel(usageUnit)}` : '—'}
             </span>
             <b>{formatRub(currentCost)}</b>
           </div>
         </div>
-      </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs text-amber-100/45">
-          {selectedIngredient
-            ? `${selectedIngredient.name}: ${selectedIngredient.package_amount} ${ingredientUnitLabel(selectedIngredient.package_unit)} за ${formatRub(selectedIngredient.package_price)}`
-            : 'Выберите ингредиент из базы.'}
-        </div>
-        <div className="flex gap-3">
-          <button className="btn-danger px-3 py-2" onClick={onDelete}>
+        <div className="flex items-end gap-2">
+          <button className="btn-danger px-3 py-3" onClick={onDelete}>
             <Trash2 size={16} />
           </button>
-          <button className="btn-primary px-4 py-2" onClick={() => saveMut.mutate()}>
+          <button className="btn-primary px-4 py-3" onClick={() => saveMut.mutate()}>
             Сохранить
           </button>
         </div>
       </div>
+
+      <div className="mt-3 text-xs text-amber-100/45">
+        {selectedIngredient
+          ? `${selectedIngredient.name} • ${selectedIngredient.package_amount} ${ingredientUnitLabel(
+              selectedIngredient.package_unit
+            )} за ${formatRub(selectedIngredient.package_price)}`
+          : 'Выберите ингредиент из базы.'}
+      </div>
+    </div>
+  )
+}
+
+function SearchableIngredientSelect({
+  ingredients,
+  value,
+  onChange,
+}: {
+  ingredients: IngredientProduct[]
+  value: string
+  onChange: (id: string) => void
+}) {
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null)
+  const selected = ingredients.find((item) => item.id === value) ?? null
+
+  const [open, setOpen] = React.useState(false)
+  const [query, setQuery] = React.useState(selected?.name ?? '')
+
+  React.useEffect(() => {
+    if (!open) setQuery(selected?.name ?? '')
+  }, [selected?.id, selected?.name, open])
+
+  React.useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (!wrapperRef.current) return
+      if (!wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery(selected?.name ?? '')
+      }
+    }
+
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [selected?.name])
+
+  const filtered = ingredients.filter((item) => matchesSearchTokens(item.name, query)).slice(0, 50)
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <input
+        className="glass-input w-full"
+        value={query}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setOpen(true)
+        }}
+        placeholder="Начните вводить ингредиент"
+      />
+
+      {open && (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 max-h-72 overflow-auto rounded-2xl border border-white/10 bg-[#18121d]/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+          {filtered.length === 0 && (
+            <div className="px-3 py-2 text-sm text-amber-100/50">Ничего не найдено.</div>
+          )}
+
+          {filtered.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onChange(item.id)
+                setQuery(item.name)
+                setOpen(false)
+              }}
+              className={cn(
+                'flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition-colors',
+                item.id === value
+                  ? 'bg-amber-400/15 text-amber-50'
+                  : 'text-amber-100/75 hover:bg-white/5 hover:text-amber-50'
+              )}
+            >
+              {item.name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -317,7 +408,9 @@ function defaultUsageUnit(ingredient: IngredientProduct): DishUsageUnit {
   return 'g'
 }
 
-function usageUnitOptions(ingredient: IngredientProduct | null | undefined): Array<{ value: DishUsageUnit; label: string }> {
+function usageUnitOptions(
+  ingredient: IngredientProduct | null | undefined
+): Array<{ value: DishUsageUnit; label: string }> {
   if (!ingredient) return [{ value: 'g', label: 'г' }]
   if (ingredient.kind === 'piece') return [{ value: 'pcs', label: 'шт' }]
   if (ingredient.kind === 'volume') return [{ value: 'l', label: 'л' }]
@@ -331,6 +424,12 @@ function ingredientUnitLabel(unit: string) {
   return 'л'
 }
 
+function unitLabel(unit: DishUsageUnit) {
+  if (unit === 'pcs') return 'шт'
+  if (unit === 'l') return 'л'
+  return 'г'
+}
+
 function estimateCost(ingredient: IngredientProduct, qty: number, usageUnit: DishUsageUnit): number {
   const validQty = isFinite(qty) && qty > 0 ? qty : 0
   if (!validQty) return 0
@@ -340,4 +439,8 @@ function estimateCost(ingredient: IngredientProduct, qty: number, usageUnit: Dis
 
   if (!packageAmount) return 0
   return round2((validQty / packageAmount) * ingredient.package_price)
+}
+
+function cn(...classes: Array<string | undefined | null | false>) {
+  return classes.filter(Boolean).join(' ')
 }

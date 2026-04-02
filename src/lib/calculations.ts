@@ -40,8 +40,9 @@ export function computeTotals(params: {
   ingredients: DishIngredient[]
   eventId?: string | null
   weekday?: number | null
+  mealType?: string | null
 }): IngredientTotalsRow[] {
-  const { menuEntries, ingredients, weekday, eventId } = params
+  const { menuEntries, ingredients, weekday, eventId, mealType } = params
 
   const byDish = new Map<string, DishIngredient[]>()
   for (const ing of ingredients) {
@@ -55,6 +56,7 @@ export function computeTotals(params: {
   for (const entry of menuEntries) {
     if (eventId && entry.event_id !== eventId) continue
     if (weekday && entry.weekday !== weekday) continue
+    if (mealType && mealType !== 'all' && entry.meal_type !== mealType) continue
     if (!entry.dish_id) continue
 
     const portions = Number(entry.portions ?? 0)

@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   BookOpen,
   ChefHat,
+  ChevronUp,
   LogOut,
   Package,
   ScrollText,
@@ -17,6 +18,17 @@ const linkBase =
 
 export function Layout({ title, children }: { title: string; children: React.ReactNode }) {
   const navigate = useNavigate()
+  const [showScrollTop, setShowScrollTop] = React.useState(false)
+
+  React.useEffect(() => {
+    function onScroll() {
+      setShowScrollTop(window.scrollY > 500)
+    }
+
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   async function onLogout() {
     await supabase.auth.signOut()
@@ -66,6 +78,17 @@ export function Layout({ title, children }: { title: string; children: React.Rea
         Данные хранятся в вашем аккаунте Supabase. Только вы имеете доступ к своему меню,
         блюдам, корзине и базе ингредиентов.
       </footer>
+
+      {showScrollTop && (
+        <button
+          type="button"
+          aria-label="Наверх"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-20 right-4 z-30 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[#18121d]/85 text-amber-50 shadow-[0_12px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:bg-white/10 xl:bottom-6"
+        >
+          <ChevronUp size={20} />
+        </button>
+      )}
 
       <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-white/10 bg-[#120f12]/85 backdrop-blur-xl xl:hidden">
         <div className="mx-auto grid max-w-7xl grid-cols-6 gap-1 px-2 py-2">

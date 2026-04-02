@@ -1,6 +1,6 @@
 import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, ShoppingCart, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Search, ShoppingCart, Trash2 } from 'lucide-react'
 import { Layout } from '../components/Layout'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
@@ -11,7 +11,7 @@ import {
   upsertIngredientProduct,
 } from '../lib/api'
 import type { IngredientBaseUnit, IngredientKind, IngredientProduct } from '../lib/types'
-import { formatRub } from '../lib/utils'
+import { formatRub, matchesSearchTokens } from '../lib/utils'
 
 const kindOptions: Array<{ value: IngredientKind; label: string }> = [
   { value: 'weight', label: 'Весовой' },
@@ -26,6 +26,7 @@ export function IngredientsPage() {
 
   const [editing, setEditing] = React.useState<IngredientProduct | null>(null)
   const [toDelete, setToDelete] = React.useState<IngredientProduct | null>(null)
+  const [search, setSearch] = React.useState('')
 
   const delMut = useMutation({
     mutationFn: deleteIngredientProduct,
@@ -52,6 +53,8 @@ export function IngredientsPage() {
     onError: (e: any) => toast.push(e?.message ?? 'Ошибка добавления в корзину.', 'error'),
   })
 
+  const filtered = (ingredientsQ.data ?? []).filter((item) => matchesSearchTokens(item.name, search))
+
   return (
     <Layout title="База ингредиентов">
       <div className="grid gap-6 xl:grid-cols-[400px_1fr]">
@@ -68,14 +71,27 @@ export function IngredientsPage() {
             </div>
           </div>
 
+          <div className="mt-4">
+            <label className="mb-2 block text-sm text-amber-100/70">Поиск ингредиентов</label>
+            <div className="relative">
+              <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-amber-100/40" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="glass-input w-full pl-11"
+                placeholder="Например: томат соус, свинина мякоть, сахар ванильный"
+              />
+            </div>
+          </div>
+
           <div className="mt-5 grid gap-3">
-            {(ingredientsQ.data ?? []).length === 0 && (
+            {filtered.length === 0 && (
               <div className="rounded-3xl border border-dashed border-white/10 bg-black/10 p-6 text-sm text-amber-100/55">
-                Пока здесь пусто. Добавьте первый ингредиент слева.
+                Ничего не найдено.
               </div>
             )}
 
-            {(ingredientsQ.data ?? []).map((item) => (
+            {filtered.map((item) => (
               <div
                 key={item.id}
                 className="rounded-3xl border border-white/10 bg-black/10 p-5 transition-all duration-300 hover:border-amber-300/20 hover:bg-white/[0.06]"
@@ -108,7 +124,11 @@ export function IngredientsPage() {
       <ConfirmDialog
         open={!!toDelete}
         title="Удалить ингредиент?"
-        description={toDelete ? `Ингредиент «${toDelete.name}» будет удален из базы. В блюдах его тоже придется заменить.` : ''}
+        description={
+          toDelete
+            ? `Ингредиент «${toDelete.name}» будет удален из базы. В блюдах его тоже придется заменить.`
+            : ''
+        }
         onClose={() => setToDelete(null)}
         onConfirm={() => {
           if (toDelete) delMut.mutate(toDelete.id)
@@ -182,14 +202,25 @@ function IngredientEditor({
       <div className="mt-5 grid gap-4">
         <div>
           <label className="mb-2 block text-sm text-amber-100/70">Название ингредиента</label>
-          <input className="glass-input w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder="Например: Мука" />
+          <input
+            className="glass-input w-full"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Например: Мука"
+          />
         </div>
 
         <div>
           <label className="mb-2 block text-sm text-amber-100/70">Тип</label>
-          <select className="glass-input w-full" value={kind} onChange={(e) => setKind(e.target.value as IngredientKind)}>
+          <select
+            className="glass-input w-full"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as IngredientKind)}
+          >
             {kindOptions.map((opt) => (
-              <option key={opt.value} value={opt.value} className="bg-[#18161b]">{opt.label}</option>
+              <option key={opt.value} value={opt.value} className="bg-[#18161b]">
+                {opt.label}
+              </option>
             ))}
           </select>
         </div>
@@ -197,13 +228,25 @@ function IngredientEditor({
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="mb-2 block text-sm text-amber-100/70">Количество в упаковке</label>
-            <input className="glass-input w-full" value={packageAmount} onChange={(e) => setPackageAmount(e.target.value)} inputMode="decimal" placeholder="1" />
+            <input
+              className="glass-input w-full"
+              value={packageAmount}
+              onChange={(e) => setPackageAmount(e.target.value)}
+              inputMode="decimal"
+              placeholder="1"
+            />
           </div>
           <div>
             <label className="mb-2 block text-sm text-amber-100/70">Единица</label>
-            <select className="glass-input w-full" value={packageUnit} onChange={(e) => setPackageUnit(e.target.value as IngredientBaseUnit)}>
+            <select
+              className="glass-input w-full"
+              value={packageUnit}
+              onChange={(e) => setPackageUnit(e.target.value as IngredientBaseUnit)}
+            >
               {unitOptionsForKind(kind).map((opt) => (
-                <option key={opt.value} value={opt.value} className="bg-[#18161b]">{opt.label}</option>
+                <option key={opt.value} value={opt.value} className="bg-[#18161b]">
+                  {opt.label}
+                </option>
               ))}
             </select>
           </div>
@@ -211,7 +254,13 @@ function IngredientEditor({
 
         <div>
           <label className="mb-2 block text-sm text-amber-100/70">Стоимость упаковки</label>
-          <input className="glass-input w-full" value={packagePrice} onChange={(e) => setPackagePrice(e.target.value)} inputMode="decimal" placeholder="0.00" />
+          <input
+            className="glass-input w-full"
+            value={packagePrice}
+            onChange={(e) => setPackagePrice(e.target.value)}
+            inputMode="decimal"
+            placeholder="0.00"
+          />
         </div>
       </div>
 
@@ -220,7 +269,11 @@ function IngredientEditor({
           <Plus size={16} />
           {initial ? 'Сохранить изменения' : 'Добавить в базу'}
         </button>
-        {initial && <button className="btn-secondary" onClick={onDone}>Отмена</button>}
+        {initial && (
+          <button className="btn-secondary" onClick={onDone}>
+            Отмена
+          </button>
+        )}
       </div>
     </div>
   )
@@ -229,7 +282,10 @@ function IngredientEditor({
 function unitOptionsForKind(kind: IngredientKind): Array<{ value: IngredientBaseUnit; label: string }> {
   if (kind === 'piece') return [{ value: 'pcs', label: 'шт' }]
   if (kind === 'volume') return [{ value: 'l', label: 'л' }]
-  return [{ value: 'kg', label: 'кг' }, { value: 'g', label: 'г' }]
+  return [
+    { value: 'kg', label: 'кг' },
+    { value: 'g', label: 'г' },
+  ]
 }
 
 function unitLabel(unit: IngredientBaseUnit) {

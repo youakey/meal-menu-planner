@@ -66,3 +66,20 @@ export function mealTypeLabel(mealType: string): string {
       return mealType
   }
 }
+
+export function normalizeSearchText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/["'`]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function matchesSearchTokens(text: string, query: string): boolean {
+  const normalizedText = normalizeSearchText(text)
+  const tokens = normalizeSearchText(query).split(' ').filter(Boolean)
+  if (!tokens.length) return true
+  return tokens.every((token) => normalizedText.includes(token))
+}
