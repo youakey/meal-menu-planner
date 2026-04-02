@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Layout } from '../components/Layout'
 import { fetchDishIngredients, fetchDishes, fetchMenuEntries, fetchMenuEvents } from '../lib/api'
 import { computeGrandTotal, computeTotals } from '../lib/calculations'
-import { formatQty, formatRub, shortWeekdayLabel } from '../lib/utils'
+import { formatQty, formatRub, mealTypeLabel, shortWeekdayLabel } from '../lib/utils'
 
 const weekdays = [1, 2, 3, 4, 5]
 
@@ -11,9 +11,13 @@ export function SummaryPage() {
   const [mode, setMode] = React.useState<'week' | 'day'>('week')
   const [weekday, setWeekday] = React.useState<number>(1)
   const [selectedEventId, setSelectedEventId] = React.useState<string>('')
+  const [mealFilter, setMealFilter] = React.useState<'all' | 'breakfast' | 'lunch' | 'dinner'>('all')
 
   const dishesQ = useQuery({ queryKey: ['dishes'], queryFn: fetchDishes })
-  const ingsQ = useQuery({ queryKey: ['dish_ingredients_all'], queryFn: () => fetchDishIngredients(undefined) })
+  const ingsQ = useQuery({
+    queryKey: ['dish_ingredients_all'],
+    queryFn: () => fetchDishIngredients(undefined),
+  })
   const menuQ = useQuery({ queryKey: ['menu_entries'], queryFn: fetchMenuEntries })
   const eventsQ = useQuery({ queryKey: ['menu_events'], queryFn: fetchMenuEvents })
 
@@ -37,8 +41,9 @@ export function SummaryPage() {
       ingredients: ingsQ.data ?? [],
       eventId: selectedEventId || null,
       weekday: mode === 'day' ? weekday : null,
+      mealType: mode === 'day' ? mealFilter : null,
     })
-  }, [menuQ.data, dishesQ.data, ingsQ.data, mode, weekday, selectedEventId])
+  }, [menuQ.data, dishesQ.data, ingsQ.data, mode, weekday, selectedEventId, mealFilter])
 
   const grand = computeGrandTotal(rows)
 
@@ -84,21 +89,69 @@ export function SummaryPage() {
           </div>
 
           {mode === 'day' && (
-            <div className="mt-4 grid grid-cols-5 gap-2">
-              {weekdays.map((day) => (
-                <button
-                  key={day}
-                  onClick={() => setWeekday(day)}
-                  className={
-                    weekday === day
-                      ? 'rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-2 py-3 text-sm font-semibold text-[#20150f]'
-                      : 'rounded-2xl border border-white/10 bg-white/5 px-2 py-3 text-sm font-medium text-amber-50'
-                  }
-                >
-                  {shortWeekdayLabel(day)}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="mt-4 grid grid-cols-5 gap-2">
+                {weekdays.map((day) => (
+                  <button
+                    key={day}
+                    onClick={() => setWeekday(day)}
+                    className={
+                      weekday === day
+                        ? 'rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-2 py-3 text-sm font-semibold text-[#20150f]'
+                        : 'rounded-2xl border border-white/10 bg-white/5 px-2 py-3 text-sm font-medium text-amber-50'
+                    }
+                  >
+                    {shortWeekdayLabel(day)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4">
+                <div className="mb-2 text-sm text-amber-100/70">Прием пищи</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setMealFilter('all')}
+                    className={
+                      mealFilter === 'all'
+                        ? 'rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-3 text-sm font-semibold text-[#20150f]'
+                        : 'rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-medium text-amber-50'
+                    }
+                  >
+                    Весь день
+                  </button>
+                  <button
+                    onClick={() => setMealFilter('breakfast')}
+                    className={
+                      mealFilter === 'breakfast'
+                        ? 'rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-3 text-sm font-semibold text-[#20150f]'
+                        : 'rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-medium text-amber-50'
+                    }
+                  >
+                    {mealTypeLabel('breakfast')}
+                  </button>
+                  <button
+                    onClick={() => setMealFilter('lunch')}
+                    className={
+                      mealFilter === 'lunch'
+                        ? 'rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-3 text-sm font-semibold text-[#20150f]'
+                        : 'rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-medium text-amber-50'
+                    }
+                  >
+                    {mealTypeLabel('lunch')}
+                  </button>
+                  <button
+                    onClick={() => setMealFilter('dinner')}
+                    className={
+                      mealFilter === 'dinner'
+                        ? 'rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-3 text-sm font-semibold text-[#20150f]'
+                        : 'rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-medium text-amber-50'
+                    }
+                  >
+                    {mealTypeLabel('dinner')}
+                  </button>
+                </div>
+              </div>
+            </>
           )}
 
           <div className="mt-5 rounded-3xl border border-white/10 bg-black/10 p-5">
@@ -110,7 +163,11 @@ export function SummaryPage() {
         <div className="glass-card p-6">
           <div className="section-subtitle">Список ингредиентов</div>
           <div className="section-title mt-1">
-            {mode === 'week' ? 'За всю неделю' : `За ${shortWeekdayLabel(weekday)}`}
+            {mode === 'week'
+              ? 'За всю неделю'
+              : mealFilter === 'all'
+                ? `За ${shortWeekdayLabel(weekday)}`
+                : `${mealTypeLabel(mealFilter)} • ${shortWeekdayLabel(weekday)}`}
           </div>
 
           <div className="mt-5 overflow-auto">
