@@ -7,6 +7,7 @@ import {
   addMenuEntry,
   deleteMenuEntry,
   deleteMenuEvent,
+  fetchDishIngredients,
   fetchDishes,
   fetchMenuEntries,
   fetchMenuEvents,
@@ -14,10 +15,10 @@ import {
   upsertMenuEvent,
   updateMenuEntry,
 } from '../lib/api'
-import type { MealType, MenuEntry } from '../lib/types'
-import { mealTypeLabel, shortWeekdayLabel, weekdayLabel } from '../lib/utils'
+import type { DishIngredient, MealType, MenuEntry } from '../lib/types'
+import { cn, formatQty, matchesSearchTokens, mealTypeLabel, shortWeekdayLabel, weekdayLabel } from '../lib/utils'
 
-const weekdays = [1, 2, 3, 4, 5]
+const weekdays = [1, 2, 3, 4, 5, 6, 7]
 const mealSections: MealType[] = ['breakfast', 'lunch', 'dinner', 'late_snack']
 
 export function MenuPage() {
@@ -29,6 +30,10 @@ export function MenuPage() {
   const [selectedEventId, setSelectedEventId] = React.useState<string>('')
 
   const dishesQ = useQuery({ queryKey: ['dishes'], queryFn: fetchDishes })
+  const dishIngredientsQ = useQuery({
+    queryKey: ['dish_ingredients_all'],
+    queryFn: () => fetchDishIngredients(undefined),
+  })
   const eventsQ = useQuery({ queryKey: ['menu_events'], queryFn: fetchMenuEvents })
   const menuQ = useQuery({ queryKey: ['menu_entries'], queryFn: fetchMenuEntries })
 
@@ -78,7 +83,7 @@ export function MenuPage() {
         meal_type: mealType,
         dish_id: null,
         portions: 1,
-        variant_name: '',
+        variant_name: null,
       })
     },
     onSuccess: () => {
@@ -112,9 +117,7 @@ export function MenuPage() {
         dish_id: entry.dish_id,
         portions: entry.portions,
         source_menu_entry_id: entry.id,
-        title_override: entry.variant_name?.trim()
-          ? `${dish?.name ?? 'Блюдо'} — ${entry.variant_name.trim()}`
-          : dish?.name ?? null,
+        title_override: dish?.name ?? null,
       })
     },
     onSuccess: () => {
@@ -125,10 +128,23 @@ export function MenuPage() {
   })
 
   const events = eventsQ.data ?? []
-  const dishes = dishesQ.data ?? []
+  const dishes = React.useMemo(
+    () => [...(dishesQ.data ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+    [dishesQ.data]
+  )
   const menu = (menuQ.data ?? []).filter(
     (row) => row.event_id === selectedEventId && row.weekday === weekday
   )
+
+  const dishIngredientsByDish = React.useMemo(() => {
+    const map = new Map<string, DishIngredient[]>()
+    for (const row of dishIngredientsQ.data ?? []) {
+      const arr = map.get(row.dish_id) ?? []
+      arr.push(row)
+      map.set(row.dish_id, arr)
+    }
+    return map
+  }, [dishIngredientsQ.data])
 
   function onCreateEvent() {
     const name = window.prompt('Название мероприятия')
@@ -186,19 +202,24 @@ export function MenuPage() {
                 {event.name}
               </button>
             ))}
-            <button className="btn-secondary px-4 py-2.5" onClick={onCreateEvent}>
-              <Plus size={16} />
-              Добавить мероприятие
-            </button>
-            {selectedEventId && events.length > 1 && (
-              <button className="btn-danger px-4 py-2.5" onClick={onDeleteCurrentEvent}>
-                Удалить мероприятие
-              </button>
+
+            {mode === 'edit' && (
+              <>
+                <button className="btn-secondary px-4 py-2.5" onClick={onCreateEvent}>
+                  <Plus size={16} />
+                  Добавить мероприятие
+                </button>
+                {selectedEventId && events.length > 1 && (
+                  <button className="btn-danger px-4 py-2.5" onClick={onDeleteCurrentEvent}>
+                    Удалить мероприятие
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-5 gap-2">
+        <div className="mt-5 grid grid-cols-7 gap-2">
           {weekdays.map((day) => (
             <button
               key={day}
@@ -243,14 +264,12 @@ export function MenuPage() {
                     entry={entry}
                     mode={mode}
                     dishes={dishes}
+                    dishIngredientsByDish={dishIngredientsByDish}
                     onChangeDish={(dishId) =>
                       updateMut.mutate({ id: entry.id, patch: { dish_id: dishId || null } })
                     }
                     onChangePortions={(portions) =>
                       updateMut.mutate({ id: entry.id, patch: { portions } })
-                    }
-                    onChangeVariant={(variant_name) =>
-                      updateMut.mutate({ id: entry.id, patch: { variant_name } })
                     }
                     onDelete={() => deleteMut.mutate(entry.id)}
                     onAddToCart={() => addToCartMut.mutate(entry)}
@@ -269,34 +288,42 @@ function MenuEntryCard({
   entry,
   mode,
   dishes,
+  dishIngredientsByDish,
   onChangeDish,
   onChangePortions,
-  onChangeVariant,
   onDelete,
   onAddToCart,
 }: {
   entry: MenuEntry
   mode: 'view' | 'edit'
   dishes: Array<{ id: string; name: string }>
+  dishIngredientsByDish: Map<string, DishIngredient[]>
   onChangeDish: (dishId: string) => void
   onChangePortions: (portions: number) => void
-  onChangeVariant: (variant: string) => void
   onDelete: () => void
   onAddToCart: () => void
 }) {
   const selectedDish = dishes.find((row) => row.id === entry.dish_id)
+  const ingredientsPreview = buildIngredientsPreview(entry, dishIngredientsByDish)
 
   if (mode === 'view') {
     return (
       <div className="rounded-3xl border border-white/10 bg-black/10 p-4 md:p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
             <div className="text-lg font-semibold text-amber-50">
               {selectedDish?.name ?? 'Блюдо не выбрано'}
             </div>
-            <div className="mt-1 text-sm text-amber-100/60">
-              {entry.variant_name?.trim() ? `Вариация: ${entry.variant_name.trim()} • ` : ''}
-              Порций: {entry.portions}
+            <div className="mt-1 text-sm text-amber-100/60">Порций: {entry.portions}</div>
+            <div className="mt-3">
+              <div className="mb-1 text-sm text-amber-100/70">Ингредиенты</div>
+              <div className="text-sm leading-7 text-amber-100/60">
+                {ingredientsPreview.length ? (
+                  ingredientsPreview.map((line, idx) => <div key={idx}>{line}</div>)
+                ) : (
+                  'Нет ингредиентов'
+                )}
+              </div>
             </div>
           </div>
           <button className="btn-secondary self-start px-4 py-2.5" onClick={onAddToCart}>
@@ -310,23 +337,17 @@ function MenuEntryCard({
 
   return (
     <div className="rounded-3xl border border-white/10 bg-black/10 p-4 md:p-5">
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_180px_1fr_auto]">
+      <div className="grid gap-4 lg:grid-cols-[1.4fr_180px_auto]">
         <div>
           <label className="mb-2 block text-sm text-amber-100/70">Блюдо</label>
-          <select
+          <SearchableDishSelect
+            dishes={dishes}
             value={entry.dish_id ?? ''}
-            onChange={(e) => onChangeDish(e.target.value)}
-            className="glass-input w-full"
-          >
-            <option value="" disabled className="bg-[#18161b]">
-              Выберите блюдо
-            </option>
-            {dishes.map((dish) => (
-              <option key={dish.id} value={dish.id} className="bg-[#18161b]">
-                {dish.name}
-              </option>
-            ))}
-          </select>
+            onChange={onChangeDish}
+          />
+          <div className="mt-2 text-xs text-amber-100/45">
+            Быстрый просмотр: {selectedDish?.name ?? 'не выбрано'} • {entry.portions} порц.
+          </div>
         </div>
 
         <div>
@@ -341,16 +362,6 @@ function MenuEntryCard({
           />
         </div>
 
-        <div>
-          <label className="mb-2 block text-sm text-amber-100/70">Вариация</label>
-          <input
-            value={entry.variant_name ?? ''}
-            onChange={(e) => onChangeVariant(e.target.value)}
-            className="glass-input w-full"
-            placeholder="Например: без сахара / детская / постная"
-          />
-        </div>
-
         <div className="flex flex-wrap items-end gap-2">
           <button className="btn-secondary px-3 py-3" onClick={onAddToCart} title="В корзину">
             <ShoppingCart size={16} />
@@ -360,11 +371,98 @@ function MenuEntryCard({
           </button>
         </div>
       </div>
-
-      <div className="mt-3 text-xs text-amber-100/45">
-        Быстрый просмотр: {selectedDish?.name ?? 'не выбрано'} • {entry.portions} порц.
-        {entry.variant_name?.trim() ? ` • ${entry.variant_name.trim()}` : ''}
-      </div>
     </div>
   )
+}
+
+function SearchableDishSelect({
+  dishes,
+  value,
+  onChange,
+}: {
+  dishes: Array<{ id: string; name: string }>
+  value: string
+  onChange: (dishId: string) => void
+}) {
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null)
+  const selected = dishes.find((item) => item.id === value) ?? null
+
+  const [open, setOpen] = React.useState(false)
+  const [query, setQuery] = React.useState(selected?.name ?? '')
+
+  React.useEffect(() => {
+    if (!open) setQuery(selected?.name ?? '')
+  }, [selected?.id, selected?.name, open])
+
+  React.useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (!wrapperRef.current) return
+      if (!wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery(selected?.name ?? '')
+      }
+    }
+
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [selected?.name])
+
+  const filtered = dishes.filter((dish) => matchesSearchTokens(dish.name, query)).slice(0, 50)
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <input
+        className="glass-input w-full"
+        value={query}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setOpen(true)
+        }}
+        placeholder="Начните вводить название блюда"
+      />
+
+      {open && (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 max-h-80 overflow-auto rounded-2xl border border-white/10 bg-[#18121d]/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+          {filtered.length === 0 && (
+            <div className="px-3 py-2 text-sm text-amber-100/50">Ничего не найдено.</div>
+          )}
+
+          {filtered.map((dish) => (
+            <button
+              key={dish.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onChange(dish.id)
+                setQuery(dish.name)
+                setOpen(false)
+              }}
+              className={cn(
+                'flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition-colors',
+                dish.id === value
+                  ? 'bg-amber-400/15 text-amber-50'
+                  : 'text-amber-100/75 hover:bg-white/5 hover:text-amber-50'
+              )}
+            >
+              {dish.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function buildIngredientsPreview(
+  entry: MenuEntry,
+  dishIngredientsByDish: Map<string, DishIngredient[]>
+): string[] {
+  if (!entry.dish_id) return []
+  const rows = dishIngredientsByDish.get(entry.dish_id) ?? []
+  return rows.map((row) => {
+    const qty = Number(row.quantity_per_portion ?? 0) * Number(entry.portions ?? 0)
+    const ingredientName = row.ingredient?.name ?? 'Ингредиент'
+    return `${ingredientName} — ${formatQty(qty, row.usage_unit)}`
+  })
 }

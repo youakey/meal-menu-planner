@@ -8,10 +8,11 @@ import type {
 } from './types'
 import { round2 } from './utils'
 
-function packageUnitToSameScaleAmount(amount: number, unit: IngredientBaseUnit): number {
+function normalizeAmountToBase(amount: number, unit: IngredientBaseUnit | 'g' | 'pcs' | 'l' | 'ml'): number {
   if (unit === 'kg') return amount * 1000
   if (unit === 'g') return amount
   if (unit === 'pcs') return amount
+  if (unit === 'l') return amount * 1000
   return amount
 }
 
@@ -20,14 +21,15 @@ function computeCostForIngredientUsage(ing: DishIngredient, portions = 1): numbe
   if (!ingredient) return 0
 
   const qty = Number(ing.quantity_per_portion ?? 0) * portions
-  const packAmount = packageUnitToSameScaleAmount(
+  const qtyBase = normalizeAmountToBase(qty, ing.usage_unit)
+  const packBase = normalizeAmountToBase(
     Number(ingredient.package_amount ?? 0),
     ingredient.package_unit
   )
   const packPrice = Number(ingredient.package_price ?? 0)
 
-  if (!packAmount || !packPrice || qty <= 0) return 0
-  return round2((qty / packAmount) * packPrice)
+  if (!packBase || !packPrice || qtyBase <= 0) return 0
+  return round2((qtyBase / packBase) * packPrice)
 }
 
 export function computeDishCostPerPortion(ingredients: DishIngredient[]): number {
@@ -137,10 +139,13 @@ export function computeTotalsFromCart(params: {
       const qty = Number(item.quantity ?? 0)
       if (qty <= 0) continue
 
-      let packAmount = Number(item.ingredient.package_amount ?? 0)
-      if (item.ingredient.package_unit === 'kg' && unit === 'g') packAmount *= 1000
+      const qtyBase = normalizeAmountToBase(qty, unit)
+      const packBase = normalizeAmountToBase(
+        Number(item.ingredient.package_amount ?? 0),
+        item.ingredient.package_unit
+      )
 
-      const cost = packAmount > 0 ? (qty / packAmount) * Number(item.ingredient.package_price ?? 0) : 0
+      const cost = packBase > 0 ? (qtyBase / packBase) * Number(item.ingredient.package_price ?? 0) : 0
       const key = `${item.ingredient_id}:${unit}`
       const existing = totals.get(key)
 
@@ -174,6 +179,7 @@ function finalizeRows(rows: IngredientTotalsRow[]): IngredientTotalsRow[] {
 
 function defaultCartUnit(packageUnit: IngredientBaseUnit) {
   if (packageUnit === 'pcs') return 'pcs'
+  if (packageUnit === 'ml') return 'ml'
   if (packageUnit === 'l') return 'l'
   return 'g'
 }

@@ -3,15 +3,22 @@ import { useQuery } from '@tanstack/react-query'
 import { Layout } from '../components/Layout'
 import { fetchDishIngredients, fetchDishes, fetchMenuEntries, fetchMenuEvents } from '../lib/api'
 import { computeGrandTotal, computeTotals } from '../lib/calculations'
+import {
+  buildMenuFilename,
+  buildShoppingFilename,
+  exportMenuDocx,
+  exportShoppingListDocx,
+} from '../lib/docxExport'
 import { formatQty, formatRub, mealTypeLabel, shortWeekdayLabel } from '../lib/utils'
 
-const weekdays = [1, 2, 3, 4, 5]
+const weekdays = [1, 2, 3, 4, 5, 6, 7]
 
 export function SummaryPage() {
   const [mode, setMode] = React.useState<'week' | 'day'>('week')
   const [weekday, setWeekday] = React.useState<number>(1)
   const [selectedEventId, setSelectedEventId] = React.useState<string>('')
   const [mealFilter, setMealFilter] = React.useState<'all' | 'breakfast' | 'lunch' | 'dinner'>('all')
+  const [exporting, setExporting] = React.useState<'menu' | 'shopping' | null>(null)
 
   const dishesQ = useQuery({ queryKey: ['dishes'], queryFn: fetchDishes })
   const ingsQ = useQuery({
@@ -46,6 +53,51 @@ export function SummaryPage() {
   }, [menuQ.data, dishesQ.data, ingsQ.data, mode, weekday, selectedEventId, mealFilter])
 
   const grand = computeGrandTotal(rows)
+  const selectedEvent = (eventsQ.data ?? []).find((event) => event.id === selectedEventId) ?? null
+
+  const filteredMenuEntries = React.useMemo(() => {
+    return (menuQ.data ?? []).filter((entry) => {
+      if (selectedEventId && entry.event_id !== selectedEventId) return false
+      if (mode === 'day' && entry.weekday !== weekday) return false
+      if (mode === 'day' && mealFilter !== 'all' && entry.meal_type !== mealFilter) return false
+      return true
+    })
+  }, [menuQ.data, selectedEventId, mode, weekday, mealFilter])
+
+  async function onExportMenu() {
+    try {
+      setExporting('menu')
+      await exportMenuDocx({
+        filename: buildMenuFilename(selectedEvent?.name ?? 'menu', mode, weekday),
+        eventName: selectedEvent?.name ?? 'Мероприятие',
+        mode,
+        weekday,
+        mealFilter,
+        menuEntries: filteredMenuEntries,
+        dishes: dishesQ.data ?? [],
+        dishIngredients: ingsQ.data ?? [],
+      })
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  async function onExportShopping() {
+    try {
+      setExporting('shopping')
+      await exportShoppingListDocx({
+        filename: buildShoppingFilename(selectedEvent?.name ?? 'shopping', mode, weekday),
+        eventName: selectedEvent?.name ?? 'Мероприятие',
+        mode,
+        weekday,
+        mealFilter,
+        rows,
+        grandTotal: grand,
+      })
+    } finally {
+      setExporting(null)
+    }
+  }
 
   return (
     <Layout title="Итоги">
@@ -90,7 +142,7 @@ export function SummaryPage() {
 
           {mode === 'day' && (
             <>
-              <div className="mt-4 grid grid-cols-5 gap-2">
+              <div className="mt-4 grid grid-cols-7 gap-2">
                 {weekdays.map((day) => (
                   <button
                     key={day}
@@ -157,6 +209,15 @@ export function SummaryPage() {
           <div className="mt-5 rounded-3xl border border-white/10 bg-black/10 p-5">
             <div className="text-sm text-amber-100/55">Общая стоимость</div>
             <div className="mt-2 text-3xl font-semibold text-amber-50">{formatRub(grand)}</div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2">
+            <button className="btn-secondary w-full" onClick={onExportMenu} disabled={exporting !== null}>
+              {exporting === 'menu' ? 'Экспорт меню...' : 'Экспорт меню DOCX'}
+            </button>
+            <button className="btn-secondary w-full" onClick={onExportShopping} disabled={exporting !== null}>
+              {exporting === 'shopping' ? 'Экспорт списка...' : 'Экспорт списка покупок DOCX'}
+            </button>
           </div>
         </div>
 

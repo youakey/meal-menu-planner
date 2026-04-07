@@ -14,7 +14,7 @@ import {
   upsertDishIngredient,
 } from '../lib/api'
 import { computeDishCostPerPortion } from '../lib/calculations'
-import { formatRub, matchesSearchTokens, round2 } from '../lib/utils'
+import { cn, formatRub, matchesSearchTokens, round2 } from '../lib/utils'
 import type { DishIngredient, DishUsageUnit, IngredientProduct } from '../lib/types'
 
 export function DishEditPage() {
@@ -68,7 +68,14 @@ export function DishEditPage() {
       return upsertDishIngredient({
         dish_id: id,
         ingredient_id: first.id,
-        quantity_per_portion: first.kind === 'piece' ? 1 : first.kind === 'volume' ? 0.1 : 100,
+        quantity_per_portion:
+          first.kind === 'piece'
+            ? 1
+            : first.kind === 'volume' && first.package_unit === 'ml'
+              ? 100
+              : first.kind === 'volume'
+                ? 0.1
+                : 100,
         usage_unit: defaultUsageUnit(first),
       })
     },
@@ -244,7 +251,6 @@ function DishIngredientRow({
   })
 
   const selectedIngredient = ingredientOptions.find((i) => i.id === ingredientId) ?? currentIngredient
-
   const currentCost = selectedIngredient
     ? estimateCost(selectedIngredient, Number(quantity.replace(',', '.')), usageUnit)
     : 0
@@ -333,7 +339,11 @@ function SearchableIngredientSelect({
   onChange: (id: string) => void
 }) {
   const wrapperRef = React.useRef<HTMLDivElement | null>(null)
-  const selected = ingredients.find((item) => item.id === value) ?? null
+  const sortedIngredients = React.useMemo(
+    () => [...ingredients].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+    [ingredients]
+  )
+  const selected = sortedIngredients.find((item) => item.id === value) ?? null
 
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState(selected?.name ?? '')
@@ -355,7 +365,7 @@ function SearchableIngredientSelect({
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [selected?.name])
 
-  const filtered = ingredients.filter((item) => matchesSearchTokens(item.name, query)).slice(0, 50)
+  const filtered = sortedIngredients.filter((item) => matchesSearchTokens(item.name, query)).slice(0, 50)
 
   return (
     <div ref={wrapperRef} className="relative">
@@ -404,7 +414,7 @@ function SearchableIngredientSelect({
 
 function defaultUsageUnit(ingredient: IngredientProduct): DishUsageUnit {
   if (ingredient.kind === 'piece') return 'pcs'
-  if (ingredient.kind === 'volume') return 'l'
+  if (ingredient.kind === 'volume') return ingredient.package_unit === 'ml' ? 'ml' : 'l'
   return 'g'
 }
 
@@ -413,7 +423,12 @@ function usageUnitOptions(
 ): Array<{ value: DishUsageUnit; label: string }> {
   if (!ingredient) return [{ value: 'g', label: 'г' }]
   if (ingredient.kind === 'piece') return [{ value: 'pcs', label: 'шт' }]
-  if (ingredient.kind === 'volume') return [{ value: 'l', label: 'л' }]
+  if (ingredient.kind === 'volume') {
+    return [
+      { value: 'l', label: 'л' },
+      { value: 'ml', label: 'мл' },
+    ]
+  }
   return [{ value: 'g', label: 'г' }]
 }
 
@@ -421,26 +436,32 @@ function ingredientUnitLabel(unit: string) {
   if (unit === 'kg') return 'кг'
   if (unit === 'g') return 'г'
   if (unit === 'pcs') return 'шт'
+  if (unit === 'ml') return 'мл'
   return 'л'
 }
 
 function unitLabel(unit: DishUsageUnit) {
   if (unit === 'pcs') return 'шт'
   if (unit === 'l') return 'л'
+  if (unit === 'ml') return 'мл'
   return 'г'
+}
+
+function toBase(amount: number, unit: string): number {
+  if (unit === 'kg') return amount * 1000
+  if (unit === 'g') return amount
+  if (unit === 'l') return amount * 1000
+  if (unit === 'ml') return amount
+  return amount
 }
 
 function estimateCost(ingredient: IngredientProduct, qty: number, usageUnit: DishUsageUnit): number {
   const validQty = isFinite(qty) && qty > 0 ? qty : 0
   if (!validQty) return 0
 
-  let packageAmount = ingredient.package_amount
-  if (ingredient.package_unit === 'kg' && usageUnit === 'g') packageAmount = ingredient.package_amount * 1000
+  const qtyBase = toBase(validQty, usageUnit)
+  const packBase = toBase(ingredient.package_amount, ingredient.package_unit)
+  if (!packBase) return 0
 
-  if (!packageAmount) return 0
-  return round2((validQty / packageAmount) * ingredient.package_price)
-}
-
-function cn(...classes: Array<string | undefined | null | false>) {
-  return classes.filter(Boolean).join(' ')
+  return round2((qtyBase / packBase) * ingredient.package_price)
 }

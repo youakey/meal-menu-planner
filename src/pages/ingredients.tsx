@@ -43,8 +43,22 @@ export function IngredientsPage() {
       upsertCartItem({
         item_kind: 'ingredient',
         ingredient_id: item.id,
-        quantity: item.kind === 'piece' ? 1 : item.kind === 'volume' ? 1 : 100,
-        quantity_unit: item.kind === 'piece' ? 'pcs' : item.kind === 'volume' ? 'l' : 'g',
+        quantity:
+          item.kind === 'piece'
+            ? 1
+            : item.package_unit === 'ml'
+              ? 100
+              : item.kind === 'volume'
+                ? 1
+                : 100,
+        quantity_unit:
+          item.kind === 'piece'
+            ? 'pcs'
+            : item.package_unit === 'ml'
+              ? 'ml'
+              : item.kind === 'volume'
+                ? 'l'
+                : 'g',
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cart_items'] })
@@ -74,7 +88,10 @@ export function IngredientsPage() {
           <div className="mt-4">
             <label className="mb-2 block text-sm text-amber-100/70">Поиск ингредиентов</label>
             <div className="relative">
-              <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-amber-100/40" />
+              <Search
+                size={16}
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-amber-100/40"
+              />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -157,7 +174,7 @@ function IngredientEditor({
   React.useEffect(() => {
     if (kind === 'weight' && !['kg', 'g'].includes(packageUnit)) setPackageUnit('kg')
     if (kind === 'piece' && packageUnit !== 'pcs') setPackageUnit('pcs')
-    if (kind === 'volume' && packageUnit !== 'l') setPackageUnit('l')
+    if (kind === 'volume' && !['l', 'ml'].includes(packageUnit)) setPackageUnit('l')
   }, [kind, packageUnit])
 
   const saveMut = useMutation({
@@ -281,7 +298,12 @@ function IngredientEditor({
 
 function unitOptionsForKind(kind: IngredientKind): Array<{ value: IngredientBaseUnit; label: string }> {
   if (kind === 'piece') return [{ value: 'pcs', label: 'шт' }]
-  if (kind === 'volume') return [{ value: 'l', label: 'л' }]
+  if (kind === 'volume') {
+    return [
+      { value: 'l', label: 'л' },
+      { value: 'ml', label: 'мл' },
+    ]
+  }
   return [
     { value: 'kg', label: 'кг' },
     { value: 'g', label: 'г' },
@@ -292,6 +314,7 @@ function unitLabel(unit: IngredientBaseUnit) {
   if (unit === 'pcs') return 'шт'
   if (unit === 'kg') return 'кг'
   if (unit === 'g') return 'г'
+  if (unit === 'ml') return 'мл'
   return 'л'
 }
 

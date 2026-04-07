@@ -10,8 +10,8 @@ export type Dish = {
 }
 
 export type IngredientKind = 'weight' | 'piece' | 'volume'
-export type IngredientBaseUnit = 'kg' | 'g' | 'pcs' | 'l'
-export type DishUsageUnit = 'g' | 'pcs' | 'l'
+export type IngredientBaseUnit = 'kg' | 'g' | 'pcs' | 'l' | 'ml'
+export type DishUsageUnit = 'g' | 'pcs' | 'l' | 'ml'
 
 export type IngredientProduct = {
   id: UUID

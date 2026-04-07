@@ -11,10 +11,11 @@ export function formatRub(n: number): string {
   return `${v.toFixed(2)} руб.`
 }
 
-export function formatQty(n: number, unit: 'g' | 'pcs' | 'l'): string {
+export function formatQty(n: number, unit: 'g' | 'pcs' | 'l' | 'ml'): string {
   const v = round2(n)
   if (unit === 'g') return `${v} г`
   if (unit === 'pcs') return `${v} шт`
+  if (unit === 'ml') return `${v} мл`
   return `${v} л`
 }
 
@@ -30,6 +31,10 @@ export function weekdayLabel(weekday: number): string {
       return 'Четверг'
     case 5:
       return 'Пятница'
+    case 6:
+      return 'Суббота'
+    case 7:
+      return 'Воскресенье'
     default:
       return `День ${weekday}`
   }
@@ -47,6 +52,10 @@ export function shortWeekdayLabel(weekday: number): string {
       return 'Чт'
     case 5:
       return 'Пт'
+    case 6:
+      return 'Сб'
+    case 7:
+      return 'Вс'
     default:
       return String(weekday)
   }
