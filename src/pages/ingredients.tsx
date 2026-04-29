@@ -68,11 +68,12 @@ export function IngredientsPage() {
   })
 
   const filtered = (ingredientsQ.data ?? []).filter((item) => matchesSearchTokens(item.name, search))
+  const onEditDone = React.useCallback(() => setEditing(null), [])
 
   return (
     <Layout title="База ингредиентов">
       <div className="grid gap-6 xl:grid-cols-[400px_1fr]">
-        <IngredientEditor key={editing?.id ?? 'new'} initial={editing} onDone={() => setEditing(null)} />
+        <IngredientEditor key={editing?.id ?? 'new'} initial={editing} onDone={onEditDone} />
 
         <div className="glass-card p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -155,7 +156,7 @@ export function IngredientsPage() {
   )
 }
 
-function IngredientEditor({
+const IngredientEditor = React.memo(function IngredientEditor({
   initial,
   onDone,
 }: {
@@ -294,7 +295,7 @@ function IngredientEditor({
       </div>
     </div>
   )
-}
+})
 
 function unitOptionsForKind(kind: IngredientKind): Array<{ value: IngredientBaseUnit; label: string }> {
   if (kind === 'piece') return [{ value: 'pcs', label: 'шт' }]

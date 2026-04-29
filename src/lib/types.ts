@@ -49,6 +49,8 @@ export type DishIngredient = {
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'late_snack'
 
+export type MenuItemType = 'dish' | 'ingredient'
+
 export type MenuEntry = {
   id: UUID
   user_id: UUID
@@ -60,6 +62,10 @@ export type MenuEntry = {
   variant_name: string | null
   created_at: string
   updated_at: string
+  // optional fields added in non-destructive migration
+  ingredient_id?: UUID | null
+  item_type?: MenuItemType
+  ingredient?: IngredientProduct | null
 }
 
 export type IngredientTotalsRow = {

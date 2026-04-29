@@ -14,6 +14,7 @@ import {
   upsertDishIngredient,
 } from '../lib/api'
 import { computeDishCostPerPortion } from '../lib/calculations'
+import { useScrollDirection } from '../hooks/useScrollDirection'
 import { cn, formatRub, matchesSearchTokens, round2 } from '../lib/utils'
 import type { DishIngredient, DishUsageUnit, IngredientProduct } from '../lib/types'
 
@@ -96,6 +97,8 @@ export function DishEditPage() {
     onError: (e: any) => toast.push(e?.message ?? 'Ошибка удаления.', 'error'),
   })
 
+  const scrollDir = useScrollDirection()
+
   if (!id) return null
 
   const rows = rowsQ.data ?? []
@@ -104,7 +107,12 @@ export function DishEditPage() {
 
   return (
     <Layout title="Редактирование блюда">
-      <div className="sticky top-[72px] z-10 -mx-1 px-1 pb-4 backdrop-blur-md">
+      <div
+        className={cn(
+          'sticky top-[72px] z-10 -mx-1 px-1 pb-4 backdrop-blur-md transition-transform duration-300',
+          scrollDir === 'down' ? '-translate-y-full' : 'translate-y-0'
+        )}
+      >
         <div className="mb-4 flex items-center justify-between gap-3">
           <button onClick={() => navigate(-1)} className="btn-secondary">
             <ArrowLeft size={16} />
@@ -166,7 +174,7 @@ export function DishEditPage() {
                 key={row.id}
                 row={row}
                 ingredientOptions={ingredientOptions}
-                onDelete={() => setToDeleteIng(row)}
+                onRequestDelete={setToDeleteIng}
               />
             ))}
           </div>
@@ -202,14 +210,14 @@ export function DishEditPage() {
   )
 }
 
-function DishIngredientRow({
+const DishIngredientRow = React.memo(function DishIngredientRow({
   row,
   ingredientOptions,
-  onDelete,
+  onRequestDelete,
 }: {
   row: DishIngredient
   ingredientOptions: IngredientProduct[]
-  onDelete: () => void
+  onRequestDelete: (row: DishIngredient) => void
 }) {
   const toast = useToast()
   const qc = useQueryClient()
@@ -309,7 +317,7 @@ function DishIngredientRow({
         </div>
 
         <div className="flex items-end gap-2">
-          <button className="btn-danger px-3 py-3" onClick={onDelete}>
+          <button className="btn-danger px-3 py-3" onClick={() => onRequestDelete(row)}>
             <Trash2 size={16} />
           </button>
           <button className="btn-primary px-4 py-3" onClick={() => saveMut.mutate()}>
@@ -327,7 +335,7 @@ function DishIngredientRow({
       </div>
     </div>
   )
-}
+})
 
 function SearchableIngredientSelect({
   ingredients,

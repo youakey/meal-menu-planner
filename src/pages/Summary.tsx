@@ -1,7 +1,7 @@
 import React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Layout } from '../components/Layout'
-import { fetchDishIngredients, fetchDishes, fetchMenuEntries, fetchMenuEvents } from '../lib/api'
+import { fetchDishIngredients, fetchDishes, fetchIngredientProducts, fetchMenuEntries, fetchMenuEvents } from '../lib/api'
 import { computeGrandTotal, computeTotals } from '../lib/calculations'
 import {
   buildMenuFilename,
@@ -27,6 +27,7 @@ export function SummaryPage() {
   })
   const menuQ = useQuery({ queryKey: ['menu_entries'], queryFn: fetchMenuEntries })
   const eventsQ = useQuery({ queryKey: ['menu_events'], queryFn: fetchMenuEvents })
+  const ingredientProductsQ = useQuery({ queryKey: ['ingredient_products'], queryFn: fetchIngredientProducts })
 
   React.useEffect(() => {
     const events = eventsQ.data ?? []
@@ -46,11 +47,12 @@ export function SummaryPage() {
       menuEntries: menuQ.data ?? [],
       dishes: dishesQ.data ?? [],
       ingredients: ingsQ.data ?? [],
+      ingredientProducts: ingredientProductsQ.data ?? [],
       eventId: selectedEventId || null,
       weekday: mode === 'day' ? weekday : null,
       mealType: mode === 'day' ? mealFilter : null,
     })
-  }, [menuQ.data, dishesQ.data, ingsQ.data, mode, weekday, selectedEventId, mealFilter])
+  }, [menuQ.data, dishesQ.data, ingsQ.data, ingredientProductsQ.data, mode, weekday, selectedEventId, mealFilter])
 
   const grand = computeGrandTotal(rows)
   const selectedEvent = (eventsQ.data ?? []).find((event) => event.id === selectedEventId) ?? null

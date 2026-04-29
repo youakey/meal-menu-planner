@@ -3,6 +3,7 @@ import type {
   Dish,
   DishIngredient,
   IngredientBaseUnit,
+  IngredientProduct,
   IngredientTotalsRow,
   MenuEntry,
 } from './types'
@@ -40,11 +41,12 @@ export function computeTotals(params: {
   menuEntries: MenuEntry[]
   dishes: Dish[]
   ingredients: DishIngredient[]
+  ingredientProducts?: IngredientProduct[]
   eventId?: string | null
   weekday?: number | null
   mealType?: string | null
 }): IngredientTotalsRow[] {
-  const { menuEntries, ingredients, weekday, eventId, mealType } = params
+  const { menuEntries, ingredients, ingredientProducts, weekday, eventId, mealType } = params
 
   const byDish = new Map<string, DishIngredient[]>()
   for (const ing of ingredients) {
@@ -59,8 +61,33 @@ export function computeTotals(params: {
     if (eventId && entry.event_id !== eventId) continue
     if (weekday && entry.weekday !== weekday) continue
     if (mealType && mealType !== 'all' && entry.meal_type !== mealType) continue
-    if (!entry.dish_id) continue
 
+    const itemType = entry.item_type ?? 'dish'
+
+    if (itemType === 'ingredient') {
+      const ing = entry.ingredient ?? (ingredientProducts ?? []).find((p) => p.id === entry.ingredient_id)
+      if (!ing || !entry.ingredient_id) continue
+
+      const qty = Number(entry.portions ?? 0)
+      if (qty <= 0) continue
+
+      const unit = (entry as any).quantity_unit ?? (ing.package_unit === 'kg' ? 'g' : ing.package_unit === 'l' ? 'ml' : ing.package_unit)
+      const qtyBase = normalizeAmountToBase(qty, unit)
+      const packBase = normalizeAmountToBase(Number(ing.package_amount ?? 0), ing.package_unit)
+      const cost = packBase > 0 ? round2((qtyBase / packBase) * Number(ing.package_price ?? 0)) : 0
+
+      const key = `${entry.ingredient_id}:${unit}`
+      const existing = totals.get(key)
+      if (!existing) {
+        totals.set(key, { ingredient_id: entry.ingredient_id, ingredient_name: ing.name, total_quantity: qty, display_unit: unit as any, total_cost: cost })
+      } else {
+        existing.total_quantity += qty
+        existing.total_cost += cost
+      }
+      continue
+    }
+
+    if (!entry.dish_id) continue
     const portions = Number(entry.portions ?? 0)
     if (portions <= 0) continue
 

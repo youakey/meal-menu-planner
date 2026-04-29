@@ -4,6 +4,7 @@ import {
   BookOpen,
   ChefHat,
   ChevronUp,
+  KeyRound,
   LogOut,
   Package,
   ScrollText,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { cn } from '../lib/utils'
+import { ChangePasswordModal } from './ChangePasswordModal'
 
 const linkBase =
   'group relative inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-medium transition-all duration-300'
@@ -19,6 +21,7 @@ const linkBase =
 export function Layout({ title, children }: { title: string; children: React.ReactNode }) {
   const navigate = useNavigate()
   const [showScrollTop, setShowScrollTop] = React.useState(false)
+  const [passwordModalOpen, setPasswordModalOpen] = React.useState(false)
 
   React.useEffect(() => {
     function onScroll() {
@@ -37,6 +40,7 @@ export function Layout({ title, children }: { title: string; children: React.Rea
 
   return (
     <div className="min-h-screen text-amber-50">
+      <ChangePasswordModal open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} />
       <div className="fixed inset-0 pointer-events-none bg-[radial-gradient(circle_at_top,rgba(251,191,36,0.12),transparent_30%),radial-gradient(circle_at_20%_20%,rgba(251,146,60,0.18),transparent_22%),radial-gradient(circle_at_80%_10%,rgba(168,85,247,0.16),transparent_20%)]" />
 
       <header className="sticky top-0 z-20 border-b border-white/10 bg-[#120f12]/70 backdrop-blur-xl">
@@ -62,13 +66,23 @@ export function Layout({ title, children }: { title: string; children: React.Rea
             <TopLink to="/summary" label="Итоги" icon={<ScrollText size={16} />} />
           </nav>
 
-          <button
-            onClick={onLogout}
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-amber-50 transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/10 md:px-4 md:py-2.5"
-          >
-            <LogOut size={16} />
-            <span className="hidden sm:inline">Выйти</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPasswordModalOpen(true)}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-amber-50 transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/10 md:px-4 md:py-2.5"
+              title="Сменить пароль"
+            >
+              <KeyRound size={16} />
+              <span className="hidden sm:inline">Пароль</span>
+            </button>
+            <button
+              onClick={onLogout}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-amber-50 transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/10 md:px-4 md:py-2.5"
+            >
+              <LogOut size={16} />
+              <span className="hidden sm:inline">Выйти</span>
+            </button>
+          </div>
         </div>
       </header>
 

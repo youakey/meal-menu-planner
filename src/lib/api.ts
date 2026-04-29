@@ -211,7 +211,7 @@ export async function deleteDishIngredient(id: UUID): Promise<void> {
 export async function fetchMenuEntries(): Promise<MenuEntry[]> {
   const { data, error } = await supabase
     .from('menu_entries')
-    .select('*')
+    .select('*, ingredient:ingredient_products(*)')
     .order('created_at', { ascending: true })
 
   if (error) throw error
@@ -219,6 +219,14 @@ export async function fetchMenuEntries(): Promise<MenuEntry[]> {
   return ((data ?? []) as any[]).map((row) => ({
     ...row,
     portions: Number(row.portions ?? 0),
+    item_type: row.item_type ?? 'dish',
+    ingredient: row.ingredient
+      ? {
+          ...row.ingredient,
+          package_amount: Number(row.ingredient.package_amount ?? 0),
+          package_price: Number(row.ingredient.package_price ?? 0),
+        }
+      : null,
   })) as MenuEntry[]
 }
 
@@ -229,6 +237,8 @@ export async function addMenuEntry(params: {
   dish_id: UUID | null
   portions: number
   variant_name?: string | null
+  ingredient_id?: UUID | null
+  item_type?: 'dish' | 'ingredient'
 }): Promise<MenuEntry> {
   const { data, error } = await supabase
     .from('menu_entries')
@@ -239,12 +249,26 @@ export async function addMenuEntry(params: {
       dish_id: params.dish_id,
       portions: params.portions,
       variant_name: params.variant_name ?? null,
+      ingredient_id: params.ingredient_id ?? null,
+      item_type: params.item_type ?? 'dish',
     })
-    .select('*')
+    .select('*, ingredient:ingredient_products(*)')
     .single()
 
   if (error) throw error
-  return { ...(data as any), portions: Number((data as any).portions ?? 0) } as MenuEntry
+  const row = data as any
+  return {
+    ...row,
+    portions: Number(row.portions ?? 0),
+    item_type: row.item_type ?? 'dish',
+    ingredient: row.ingredient
+      ? {
+          ...row.ingredient,
+          package_amount: Number(row.ingredient.package_amount ?? 0),
+          package_price: Number(row.ingredient.package_price ?? 0),
+        }
+      : null,
+  } as MenuEntry
 }
 
 export async function updateMenuEntry(id: UUID, patch: Partial<MenuEntry>): Promise<MenuEntry> {

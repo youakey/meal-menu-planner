@@ -9,13 +9,14 @@ import {
   deleteMenuEvent,
   fetchDishIngredients,
   fetchDishes,
+  fetchIngredientProducts,
   fetchMenuEntries,
   fetchMenuEvents,
   upsertCartItem,
   upsertMenuEvent,
   updateMenuEntry,
 } from '../lib/api'
-import type { DishIngredient, MealType, MenuEntry } from '../lib/types'
+import type { DishIngredient, DishUsageUnit, IngredientProduct, MealType, MenuEntry, MenuItemType } from '../lib/types'
 import { cn, formatQty, matchesSearchTokens, mealTypeLabel, shortWeekdayLabel, weekdayLabel } from '../lib/utils'
 
 const weekdays = [1, 2, 3, 4, 5, 6, 7]
@@ -36,6 +37,7 @@ export function MenuPage() {
   })
   const eventsQ = useQuery({ queryKey: ['menu_events'], queryFn: fetchMenuEvents })
   const menuQ = useQuery({ queryKey: ['menu_entries'], queryFn: fetchMenuEntries })
+  const ingredientProductsQ = useQuery({ queryKey: ['ingredient_products'], queryFn: fetchIngredientProducts })
 
   React.useEffect(() => {
     const events = eventsQ.data ?? []
@@ -75,7 +77,7 @@ export function MenuPage() {
   })
 
   const addMut = useMutation({
-    mutationFn: (mealType: MealType) => {
+    mutationFn: ({ mealType, itemType }: { mealType: MealType; itemType: MenuItemType }) => {
       if (!selectedEventId) throw new Error('Сначала создайте или выберите мероприятие.')
       return addMenuEntry({
         event_id: selectedEventId,
@@ -84,6 +86,8 @@ export function MenuPage() {
         dish_id: null,
         portions: 1,
         variant_name: null,
+        ingredient_id: null,
+        item_type: itemType,
       })
     },
     onSuccess: () => {
@@ -110,6 +114,19 @@ export function MenuPage() {
 
   const addToCartMut = useMutation({
     mutationFn: async (entry: MenuEntry) => {
+      const itemType = entry.item_type ?? 'dish'
+      if (itemType === 'ingredient') {
+        if (!entry.ingredient_id) throw new Error('Сначала выберите ингредиент.')
+        const ing = entry.ingredient ?? (ingredientProductsQ.data ?? []).find((p) => p.id === entry.ingredient_id)
+        return upsertCartItem({
+          item_kind: 'ingredient',
+          ingredient_id: entry.ingredient_id,
+          quantity: entry.portions,
+          quantity_unit: (ing?.package_unit === 'kg' ? 'g' : ing?.package_unit === 'l' ? 'ml' : ing?.package_unit ?? 'g') as DishUsageUnit,
+          source_menu_entry_id: entry.id,
+          title_override: ing?.name ?? null,
+        })
+      }
       if (!entry.dish_id) throw new Error('Сначала выберите блюдо.')
       const dish = (dishesQ.data ?? []).find((row) => row.id === entry.dish_id)
       return upsertCartItem({
@@ -122,7 +139,7 @@ export function MenuPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cart_items'] })
-      toast.push('Блюдо добавлено в корзину.', 'success')
+      toast.push('Добавлено в корзину.', 'success')
     },
     onError: (e: any) => toast.push(e?.message ?? 'Ошибка добавления в корзину.', 'error'),
   })
@@ -244,10 +261,22 @@ export function MenuPage() {
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="text-xl font-semibold text-amber-50">{mealTypeLabel(mealType)}</div>
                 {mode === 'edit' && (
-                  <button className="btn-primary self-start px-4 py-2.5" onClick={() => addMut.mutate(mealType)}>
-                    <Plus size={16} />
-                    Добавить
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="btn-primary self-start px-4 py-2.5"
+                      onClick={() => addMut.mutate({ mealType, itemType: 'dish' })}
+                    >
+                      <Plus size={16} />
+                      Блюдо
+                    </button>
+                    <button
+                      className="btn-secondary self-start px-4 py-2.5"
+                      onClick={() => addMut.mutate({ mealType, itemType: 'ingredient' })}
+                    >
+                      <Plus size={16} />
+                      Ингредиент
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -264,9 +293,13 @@ export function MenuPage() {
                     entry={entry}
                     mode={mode}
                     dishes={dishes}
+                    ingredientProducts={ingredientProductsQ.data ?? []}
                     dishIngredientsByDish={dishIngredientsByDish}
                     onChangeDish={(dishId) =>
                       updateMut.mutate({ id: entry.id, patch: { dish_id: dishId || null } })
+                    }
+                    onChangeIngredient={(ingredientId) =>
+                      updateMut.mutate({ id: entry.id, patch: { ingredient_id: ingredientId || null } })
                     }
                     onChangePortions={(portions) =>
                       updateMut.mutate({ id: entry.id, patch: { portions } })
@@ -288,8 +321,10 @@ function MenuEntryCard({
   entry,
   mode,
   dishes,
+  ingredientProducts,
   dishIngredientsByDish,
   onChangeDish,
+  onChangeIngredient,
   onChangePortions,
   onDelete,
   onAddToCart,
@@ -297,34 +332,49 @@ function MenuEntryCard({
   entry: MenuEntry
   mode: 'view' | 'edit'
   dishes: Array<{ id: string; name: string }>
+  ingredientProducts: IngredientProduct[]
   dishIngredientsByDish: Map<string, DishIngredient[]>
   onChangeDish: (dishId: string) => void
+  onChangeIngredient: (ingredientId: string) => void
   onChangePortions: (portions: number) => void
   onDelete: () => void
   onAddToCart: () => void
 }) {
+  const itemType = entry.item_type ?? 'dish'
   const selectedDish = dishes.find((row) => row.id === entry.dish_id)
+  const selectedIngredient = entry.ingredient ?? ingredientProducts.find((p) => p.id === entry.ingredient_id)
   const ingredientsPreview = buildIngredientsPreview(entry, dishIngredientsByDish)
+
+  const typeLabel = itemType === 'ingredient' ? 'Ингредиент' : 'Блюдо'
+  const titleText =
+    itemType === 'ingredient'
+      ? (selectedIngredient?.name ?? 'Ингредиент не выбран')
+      : (selectedDish?.name ?? 'Блюдо не выбрано')
 
   if (mode === 'view') {
     return (
       <div className="rounded-3xl border border-white/10 bg-black/10 p-4 md:p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
-            <div className="text-lg font-semibold text-amber-50">
-              {selectedDish?.name ?? 'Блюдо не выбрано'}
+            <div className="mb-1 text-xs font-medium uppercase tracking-widest text-amber-400/60">
+              {typeLabel}
             </div>
-            <div className="mt-1 text-sm text-amber-100/60">Порций: {entry.portions}</div>
-            <div className="mt-3">
-              <div className="mb-1 text-sm text-amber-100/70">Ингредиенты</div>
-              <div className="text-sm leading-7 text-amber-100/60">
-                {ingredientsPreview.length ? (
-                  ingredientsPreview.map((line, idx) => <div key={idx}>{line}</div>)
-                ) : (
-                  'Нет ингредиентов'
-                )}
+            <div className="text-lg font-semibold text-amber-50">{titleText}</div>
+            <div className="mt-1 text-sm text-amber-100/60">
+              {itemType === 'ingredient' ? `Количество: ${entry.portions}` : `Порций: ${entry.portions}`}
+            </div>
+            {itemType === 'dish' && (
+              <div className="mt-3">
+                <div className="mb-1 text-sm text-amber-100/70">Ингредиенты</div>
+                <div className="text-sm leading-7 text-amber-100/60">
+                  {ingredientsPreview.length ? (
+                    ingredientsPreview.map((line, idx) => <div key={idx}>{line}</div>)
+                  ) : (
+                    'Нет ингредиентов'
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
           <button className="btn-secondary self-start px-4 py-2.5" onClick={onAddToCart}>
             <ShoppingCart size={16} />
@@ -337,21 +387,34 @@ function MenuEntryCard({
 
   return (
     <div className="rounded-3xl border border-white/10 bg-black/10 p-4 md:p-5">
+      <div className="mb-3 text-xs font-medium uppercase tracking-widest text-amber-400/60">{typeLabel}</div>
       <div className="grid gap-4 lg:grid-cols-[1.4fr_180px_auto]">
         <div>
-          <label className="mb-2 block text-sm text-amber-100/70">Блюдо</label>
-          <SearchableDishSelect
-            dishes={dishes}
-            value={entry.dish_id ?? ''}
-            onChange={onChangeDish}
-          />
+          <label className="mb-2 block text-sm text-amber-100/70">
+            {itemType === 'ingredient' ? 'Ингредиент' : 'Блюдо'}
+          </label>
+          {itemType === 'ingredient' ? (
+            <SearchableIngredientProductSelect
+              ingredientProducts={ingredientProducts}
+              value={entry.ingredient_id ?? ''}
+              onChange={onChangeIngredient}
+            />
+          ) : (
+            <SearchableDishSelect
+              dishes={dishes}
+              value={entry.dish_id ?? ''}
+              onChange={onChangeDish}
+            />
+          )}
           <div className="mt-2 text-xs text-amber-100/45">
-            Быстрый просмотр: {selectedDish?.name ?? 'не выбрано'} • {entry.portions} порц.
+            {titleText} • {entry.portions} {itemType === 'ingredient' ? 'ед.' : 'порц.'}
           </div>
         </div>
 
         <div>
-          <label className="mb-2 block text-sm text-amber-100/70">Порции</label>
+          <label className="mb-2 block text-sm text-amber-100/70">
+            {itemType === 'ingredient' ? 'Количество' : 'Порции'}
+          </label>
           <input
             type="number"
             min="0"
@@ -454,10 +517,81 @@ function SearchableDishSelect({
   )
 }
 
+function SearchableIngredientProductSelect({
+  ingredientProducts,
+  value,
+  onChange,
+}: {
+  ingredientProducts: IngredientProduct[]
+  value: string
+  onChange: (id: string) => void
+}) {
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null)
+  const sorted = React.useMemo(
+    () => [...ingredientProducts].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+    [ingredientProducts]
+  )
+  const selected = sorted.find((p) => p.id === value) ?? null
+
+  const [open, setOpen] = React.useState(false)
+  const [query, setQuery] = React.useState(selected?.name ?? '')
+
+  React.useEffect(() => {
+    if (!open) setQuery(selected?.name ?? '')
+  }, [selected?.id, selected?.name, open])
+
+  React.useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (!wrapperRef.current?.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery(selected?.name ?? '')
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [selected?.name])
+
+  const filtered = sorted.filter((p) => matchesSearchTokens(p.name, query)).slice(0, 50)
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <input
+        className="glass-input w-full"
+        value={query}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+        placeholder="Начните вводить ингредиент"
+      />
+      {open && (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 max-h-80 overflow-auto rounded-2xl border border-white/10 bg-[#18121d]/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+          {filtered.length === 0 && (
+            <div className="px-3 py-2 text-sm text-amber-100/50">Ничего не найдено.</div>
+          )}
+          {filtered.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onChange(p.id); setQuery(p.name); setOpen(false) }}
+              className={cn(
+                'flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition-colors',
+                p.id === value ? 'bg-amber-400/15 text-amber-50' : 'text-amber-100/75 hover:bg-white/5 hover:text-amber-50'
+              )}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function buildIngredientsPreview(
   entry: MenuEntry,
   dishIngredientsByDish: Map<string, DishIngredient[]>
 ): string[] {
+  if ((entry.item_type ?? 'dish') === 'ingredient') return []
   if (!entry.dish_id) return []
   const rows = dishIngredientsByDish.get(entry.dish_id) ?? []
   return rows.map((row) => {
