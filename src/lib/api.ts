@@ -18,6 +18,31 @@ export async function getSessionUserId(): Promise<string | null> {
   return data.session?.user?.id ?? null
 }
 
+// Supabase caps any single request at the project's "Max Rows" API setting
+// (1000 by default), so tables that grow past that need explicit paging or
+// rows silently go missing from the result with no error.
+const PAGE_SIZE = 1000
+
+async function fetchAllPages<T>(
+  buildQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
+): Promise<T[]> {
+  const rows: T[] = []
+  let from = 0
+
+  while (true) {
+    const { data, error } = await buildQuery(from, from + PAGE_SIZE - 1)
+    if (error) throw error
+
+    const page = data ?? []
+    rows.push(...page)
+
+    if (page.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+
+  return rows
+}
+
 export async function fetchDishes(): Promise<Dish[]> {
   const { data, error } = await supabase
     .from('dishes')
@@ -209,14 +234,15 @@ export async function deleteDishIngredient(id: UUID): Promise<void> {
 }
 
 export async function fetchMenuEntries(): Promise<MenuEntry[]> {
-  const { data, error } = await supabase
-    .from('menu_entries')
-    .select('*, ingredient:ingredient_products(*)')
-    .order('created_at', { ascending: true })
+  const data = await fetchAllPages<any>((from, to) =>
+    supabase
+      .from('menu_entries')
+      .select('*, ingredient:ingredient_products(*)')
+      .order('created_at', { ascending: true })
+      .range(from, to)
+  )
 
-  if (error) throw error
-
-  return ((data ?? []) as any[]).map((row) => ({
+  return (data as any[]).map((row) => ({
     ...row,
     portions: Number(row.portions ?? 0),
     item_type: row.item_type ?? 'dish',
