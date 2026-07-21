@@ -1,4 +1,5 @@
 import React from 'react'
+import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Eye, PencilLine, Plus, ShoppingCart, Trash2 } from 'lucide-react'
@@ -657,6 +658,57 @@ function MenuEntryCard({
   )
 }
 
+/**
+ * Dropdown anchors are inside .glass-card sections, which use backdrop-blur — a
+ * backdrop-filter ancestor becomes the containing block for position:fixed
+ * descendants too (not just a stacking context), so a plain fixed+z-index child
+ * still can't render above sibling cards. Portaling to document.body is the only
+ * way out; this hook supplies the fixed-position coordinates for that portal.
+ */
+function useDropdownAnchorStyle(
+  open: boolean,
+  anchorRef: React.RefObject<HTMLElement | null>
+): React.CSSProperties | undefined {
+  const [style, setStyle] = React.useState<React.CSSProperties | undefined>(undefined)
+
+  React.useEffect(() => {
+    if (!open) {
+      setStyle(undefined)
+      return
+    }
+
+    function recompute() {
+      const el = anchorRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const maxHeightPx = window.innerHeight * 0.6
+      const margin = 8
+      const desiredTop = rect.bottom + margin
+      const top =
+        desiredTop + maxHeightPx + margin > window.innerHeight
+          ? Math.max(margin, window.innerHeight - maxHeightPx - margin)
+          : desiredTop
+
+      setStyle({
+        position: 'fixed',
+        top,
+        left: rect.left,
+        width: rect.width,
+      })
+    }
+
+    recompute()
+    window.addEventListener('resize', recompute)
+    window.addEventListener('scroll', recompute, true)
+    return () => {
+      window.removeEventListener('resize', recompute)
+      window.removeEventListener('scroll', recompute, true)
+    }
+  }, [open, anchorRef])
+
+  return style
+}
+
 function SearchableDishSelect({
   dishes,
   value,
@@ -671,6 +723,7 @@ function SearchableDishSelect({
 
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState(selected?.name ?? '')
+  const dropdownStyle = useDropdownAnchorStyle(open, wrapperRef)
 
   React.useEffect(() => {
     if (!open) setQuery(selected?.name ?? '')
@@ -704,34 +757,40 @@ function SearchableDishSelect({
         placeholder="Начните вводить название блюда"
       />
 
-      {open && (
-        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#18121d]/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-          {filtered.length === 0 && (
-            <div className="px-3 py-2 text-sm text-amber-100/50">Ничего не найдено.</div>
-          )}
+      {open &&
+        dropdownStyle &&
+        createPortal(
+          <div
+            style={dropdownStyle}
+            className="z-50 max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#18121d]/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+          >
+            {filtered.length === 0 && (
+              <div className="px-3 py-2 text-sm text-amber-100/50">Ничего не найдено.</div>
+            )}
 
-          {filtered.map((dish) => (
-            <button
-              key={dish.id}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                onChange(dish.id)
-                setQuery(dish.name)
-                setOpen(false)
-              }}
-              className={cn(
-                'flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition-colors',
-                dish.id === value
-                  ? 'bg-amber-400/15 text-amber-50'
-                  : 'text-amber-100/75 hover:bg-white/5 hover:text-amber-50'
-              )}
-            >
-              {dish.name}
-            </button>
-          ))}
-        </div>
-      )}
+            {filtered.map((dish) => (
+              <button
+                key={dish.id}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(dish.id)
+                  setQuery(dish.name)
+                  setOpen(false)
+                }}
+                className={cn(
+                  'flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition-colors',
+                  dish.id === value
+                    ? 'bg-amber-400/15 text-amber-50'
+                    : 'text-amber-100/75 hover:bg-white/5 hover:text-amber-50'
+                )}
+              >
+                {dish.name}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
@@ -754,6 +813,7 @@ function SearchableIngredientProductSelect({
 
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState(selected?.name ?? '')
+  const dropdownStyle = useDropdownAnchorStyle(open, wrapperRef)
 
   React.useEffect(() => {
     if (!open) setQuery(selected?.name ?? '')
@@ -781,27 +841,33 @@ function SearchableIngredientProductSelect({
         onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
         placeholder="Начните вводить ингредиент"
       />
-      {open && (
-        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#18121d]/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-          {filtered.length === 0 && (
-            <div className="px-3 py-2 text-sm text-amber-100/50">Ничего не найдено.</div>
-          )}
-          {filtered.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => { onChange(p.id); setQuery(p.name); setOpen(false) }}
-              className={cn(
-                'flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition-colors',
-                p.id === value ? 'bg-amber-400/15 text-amber-50' : 'text-amber-100/75 hover:bg-white/5 hover:text-amber-50'
-              )}
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-      )}
+      {open &&
+        dropdownStyle &&
+        createPortal(
+          <div
+            style={dropdownStyle}
+            className="z-50 max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#18121d]/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+          >
+            {filtered.length === 0 && (
+              <div className="px-3 py-2 text-sm text-amber-100/50">Ничего не найдено.</div>
+            )}
+            {filtered.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { onChange(p.id); setQuery(p.name); setOpen(false) }}
+                className={cn(
+                  'flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition-colors',
+                  p.id === value ? 'bg-amber-400/15 text-amber-50' : 'text-amber-100/75 hover:bg-white/5 hover:text-amber-50'
+                )}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
