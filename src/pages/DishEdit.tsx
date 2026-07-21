@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { Layout } from '../components/Layout'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { SaveButton } from '../components/SaveButton'
 import { useToast } from '../components/Toast'
 import {
   deleteDishIngredient,
@@ -15,6 +16,7 @@ import {
 } from '../lib/api'
 import { computeDishCostPerPortion } from '../lib/calculations'
 import { useScrollDirection } from '../hooks/useScrollDirection'
+import { useSavedState } from '../lib/hooks/useSavedState'
 import { cn, formatRub, matchesSearchTokens, round2 } from '../lib/utils'
 import type { DishIngredient, DishUsageUnit, IngredientProduct } from '../lib/types'
 
@@ -39,6 +41,7 @@ export function DishEditPage() {
   const [name, setName] = React.useState('')
   const [notes, setNotes] = React.useState('')
   const [toDeleteIng, setToDeleteIng] = React.useState<DishIngredient | null>(null)
+  const [summaryPortions, setSummaryPortions] = React.useState('1')
 
   React.useEffect(() => {
     if (dishQ.data) {
@@ -47,6 +50,7 @@ export function DishEditPage() {
     }
   }, [dishQ.data?.id])
 
+  const dishSaveState = useSavedState()
   const saveDishMut = useMutation({
     mutationFn: () =>
       upsertDish({
@@ -58,8 +62,12 @@ export function DishEditPage() {
       qc.invalidateQueries({ queryKey: ['dishes'] })
       qc.invalidateQueries({ queryKey: ['dish', id] })
       toast.push('Блюдо сохранено.', 'success')
+      dishSaveState.markSaved()
     },
-    onError: (e: any) => toast.push(e?.message ?? 'Ошибка сохранения блюда.', 'error'),
+    onError: (e: any) => {
+      toast.push(e?.message ?? 'Ошибка сохранения блюда.', 'error')
+      dishSaveState.markIdle()
+    },
   })
 
   const addRowMut = useMutation({
@@ -104,6 +112,7 @@ export function DishEditPage() {
   const rows = rowsQ.data ?? []
   const ingredientOptions = ingredientsQ.data ?? []
   const dishCostPerPortion = computeDishCostPerPortion(rows)
+  const summaryPortionsValue = Number(summaryPortions.replace(',', '.')) || 0
 
   return (
     <Layout title="Редактирование блюда">
@@ -129,7 +138,10 @@ export function DishEditPage() {
               <label className="mb-2 block text-sm text-amber-100/70">Название блюда</label>
               <input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  dishSaveState.markIdle()
+                }}
                 className="glass-input w-full"
                 placeholder="Например: Венские вафли"
               />
@@ -138,7 +150,10 @@ export function DishEditPage() {
               <label className="mb-2 block text-sm text-amber-100/70">Заметки</label>
               <input
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={(e) => {
+                  setNotes(e.target.value)
+                  dishSaveState.markIdle()
+                }}
                 className="glass-input w-full"
                 placeholder="Например: семейный завтрак"
               />
@@ -146,9 +161,15 @@ export function DishEditPage() {
           </div>
 
           <div className="mt-5 flex flex-wrap gap-3">
-            <button onClick={() => saveDishMut.mutate()} className="btn-primary">
+            <SaveButton
+              status={dishSaveState.status}
+              onClick={() => {
+                dishSaveState.markSaving()
+                saveDishMut.mutate()
+              }}
+            >
               Сохранить блюдо
-            </button>
+            </SaveButton>
             <button onClick={() => addRowMut.mutate()} className="btn-secondary">
               <Plus size={16} />
               Добавить ингредиент
@@ -187,6 +208,25 @@ export function DishEditPage() {
           <div className="mt-5 rounded-3xl border border-white/10 bg-black/10 p-5">
             <div className="text-sm text-amber-100/55">Стоимость на 1 порцию</div>
             <div className="mt-2 text-3xl font-semibold text-amber-50">{formatRub(dishCostPerPortion)}</div>
+          </div>
+
+          <div className="mt-4">
+            <label className="mb-2 block text-sm text-amber-100/70">Количество порций</label>
+            <input
+              className="glass-input w-full"
+              value={summaryPortions}
+              onChange={(e) => setSummaryPortions(e.target.value)}
+              inputMode="decimal"
+            />
+          </div>
+
+          <div className="mt-4 rounded-3xl border border-amber-300/20 bg-amber-400/5 p-5">
+            <div className="text-sm text-amber-100/55">
+              Итого на {summaryPortionsValue || 0} {summaryPortionsValue === 1 ? 'порцию' : 'порций'}
+            </div>
+            <div className="mt-2 text-3xl font-semibold text-amber-50">
+              {formatRub(dishCostPerPortion * summaryPortionsValue)}
+            </div>
           </div>
 
           <div className="mt-5 text-sm leading-7 text-amber-100/60">
@@ -235,6 +275,7 @@ const DishIngredientRow = React.memo(function DishIngredientRow({
     setUsageUnit(row.usage_unit)
   }, [row.id, row.ingredient_id, row.quantity_per_portion, row.usage_unit])
 
+  const saveState = useSavedState()
   const saveMut = useMutation({
     mutationFn: async () => {
       const selected = ingredientOptions.find((i) => i.id === ingredientId)
@@ -254,8 +295,12 @@ const DishIngredientRow = React.memo(function DishIngredientRow({
       qc.invalidateQueries({ queryKey: ['dish_ingredients', row.dish_id] })
       qc.invalidateQueries({ queryKey: ['summary'] })
       toast.push('Строка сохранена.', 'success')
+      saveState.markSaved()
     },
-    onError: (e: any) => toast.push(e?.message ?? 'Ошибка сохранения.', 'error'),
+    onError: (e: any) => {
+      toast.push(e?.message ?? 'Ошибка сохранения.', 'error')
+      saveState.markIdle()
+    },
   })
 
   const selectedIngredient = ingredientOptions.find((i) => i.id === ingredientId) ?? currentIngredient
@@ -277,6 +322,7 @@ const DishIngredientRow = React.memo(function DishIngredientRow({
               if (nextIngredient) {
                 setUsageUnit(defaultUsageUnit(nextIngredient))
               }
+              saveState.markIdle()
             }}
           />
         </div>
@@ -286,7 +332,10 @@ const DishIngredientRow = React.memo(function DishIngredientRow({
           <input
             className="glass-input w-full"
             value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
+            onChange={(e) => {
+              setQuantity(e.target.value)
+              saveState.markIdle()
+            }}
             inputMode="decimal"
           />
         </div>
@@ -296,7 +345,10 @@ const DishIngredientRow = React.memo(function DishIngredientRow({
           <select
             className="glass-input w-full"
             value={usageUnit}
-            onChange={(e) => setUsageUnit(e.target.value as DishUsageUnit)}
+            onChange={(e) => {
+              setUsageUnit(e.target.value as DishUsageUnit)
+              saveState.markIdle()
+            }}
           >
             {usageUnitOptions(selectedIngredient).map((opt) => (
               <option key={opt.value} value={opt.value} className="bg-[#18161b]">
@@ -308,11 +360,8 @@ const DishIngredientRow = React.memo(function DishIngredientRow({
 
         <div>
           <label className="mb-2 block text-sm text-amber-100/70">Стоимость на порцию</label>
-          <div className="glass-input flex min-h-[50px] items-center justify-between">
-            <span className="text-amber-100/60">
-              {selectedIngredient ? `${quantity || 0} ${unitLabel(usageUnit)}` : '—'}
-            </span>
-            <b>{formatRub(currentCost)}</b>
+          <div className="glass-input flex min-h-[50px] items-center justify-end">
+            <b>{selectedIngredient ? formatRub(currentCost) : '—'}</b>
           </div>
         </div>
 
@@ -320,9 +369,16 @@ const DishIngredientRow = React.memo(function DishIngredientRow({
           <button className="btn-danger px-3 py-3" onClick={() => onRequestDelete(row)}>
             <Trash2 size={16} />
           </button>
-          <button className="btn-primary px-4 py-3" onClick={() => saveMut.mutate()}>
+          <SaveButton
+            status={saveState.status}
+            className="px-4 py-3"
+            onClick={() => {
+              saveState.markSaving()
+              saveMut.mutate()
+            }}
+          >
             Сохранить
-          </button>
+          </SaveButton>
         </div>
       </div>
 
@@ -446,13 +502,6 @@ function ingredientUnitLabel(unit: string) {
   if (unit === 'pcs') return 'шт'
   if (unit === 'ml') return 'мл'
   return 'л'
-}
-
-function unitLabel(unit: DishUsageUnit) {
-  if (unit === 'pcs') return 'шт'
-  if (unit === 'l') return 'л'
-  if (unit === 'ml') return 'мл'
-  return 'г'
 }
 
 function toBase(amount: number, unit: string): number {

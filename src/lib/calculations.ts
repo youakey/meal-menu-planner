@@ -37,6 +37,31 @@ export function computeDishCostPerPortion(ingredients: DishIngredient[]): number
   return round2(ingredients.reduce((sum, ing) => sum + computeCostForIngredientUsage(ing, 1), 0))
 }
 
+/** Cost of a single menu entry (one dish-in-a-meal or one ingredient-in-a-meal row). */
+export function computeMenuEntryCost(
+  entry: MenuEntry,
+  dishIngredientsByDish: Map<string, DishIngredient[]>,
+  ingredientProducts: IngredientProduct[]
+): number {
+  const itemType = entry.item_type ?? 'dish'
+
+  if (itemType === 'ingredient') {
+    const ing = entry.ingredient ?? ingredientProducts.find((p) => p.id === entry.ingredient_id)
+    if (!ing) return 0
+    const qty = Number(entry.portions ?? 0)
+    const unit = ing.package_unit === 'kg' ? 'g' : ing.package_unit === 'l' ? 'ml' : ing.package_unit
+    const qtyBase = normalizeAmountToBase(qty, unit)
+    const packBase = normalizeAmountToBase(Number(ing.package_amount ?? 0), ing.package_unit)
+    const packPrice = Number(ing.package_price ?? 0)
+    return packBase > 0 && packPrice > 0 && qtyBase > 0 ? round2((qtyBase / packBase) * packPrice) : 0
+  }
+
+  if (!entry.dish_id) return 0
+  const rows = dishIngredientsByDish.get(entry.dish_id) ?? []
+  const portions = Number(entry.portions ?? 0)
+  return round2(rows.reduce((sum, ing) => sum + computeCostForIngredientUsage(ing, portions), 0))
+}
+
 export function computeTotals(params: {
   menuEntries: MenuEntry[]
   dishes: Dish[]

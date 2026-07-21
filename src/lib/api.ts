@@ -9,7 +9,10 @@ import type {
   IngredientProduct,
   MenuEntry,
   MenuEvent,
-  MealType,
+  MenuEventDay,
+  MenuEventFolder,
+  MenuEventMealType,
+  MenuEventType,
   UUID,
 } from './types'
 
@@ -44,13 +47,10 @@ async function fetchAllPages<T>(
 }
 
 export async function fetchDishes(): Promise<Dish[]> {
-  const { data, error } = await supabase
-    .from('dishes')
-    .select('*')
-    .order('created_at', { ascending: false })
-
-  if (error) throw error
-  return (data ?? []) as Dish[]
+  const data = await fetchAllPages<Dish>((from, to) =>
+    supabase.from('dishes').select('*').order('created_at', { ascending: false }).range(from, to)
+  )
+  return data
 }
 
 export async function fetchDish(dishId: UUID): Promise<Dish | null> {
@@ -85,13 +85,10 @@ export async function deleteDish(dishId: UUID): Promise<void> {
 }
 
 export async function fetchIngredientProducts(): Promise<IngredientProduct[]> {
-  const { data, error } = await supabase
-    .from('ingredient_products')
-    .select('*')
-    .order('name', { ascending: true })
-
-  if (error) throw error
-  return ((data ?? []) as any[]).map((row) => ({
+  const data = await fetchAllPages<any>((from, to) =>
+    supabase.from('ingredient_products').select('*').order('name', { ascending: true }).range(from, to)
+  )
+  return data.map((row) => ({
     ...row,
     package_amount: Number(row.package_amount ?? 0),
     package_price: Number(row.package_price ?? 0),
@@ -148,17 +145,21 @@ export async function upsertMenuEvent(input: {
   name: string
   notes?: string | null
   is_default?: boolean
+  folder_id?: UUID | null
+  event_type?: MenuEventType
+  guest_count?: string | null
 }): Promise<MenuEvent> {
-  const { data, error } = await supabase
-    .from('menu_events')
-    .upsert({
-      id: input.id,
-      name: input.name,
-      notes: input.notes ?? null,
-      is_default: input.is_default ?? false,
-    })
-    .select('*')
-    .single()
+  const patch: Record<string, unknown> = {
+    id: input.id,
+    name: input.name,
+    notes: input.notes ?? null,
+    is_default: input.is_default ?? false,
+  }
+  if (input.folder_id !== undefined) patch.folder_id = input.folder_id
+  if (input.event_type !== undefined) patch.event_type = input.event_type
+  if (input.guest_count !== undefined) patch.guest_count = input.guest_count
+
+  const { data, error } = await supabase.from('menu_events').upsert(patch).select('*').single()
 
   if (error) throw error
   return data as MenuEvent
@@ -169,18 +170,114 @@ export async function deleteMenuEvent(id: UUID): Promise<void> {
   if (error) throw error
 }
 
-export async function fetchDishIngredients(dishId?: UUID): Promise<DishIngredient[]> {
-  let q = supabase
-    .from('dish_ingredients')
-    .select('*, ingredient:ingredient_products(*)')
-    .order('created_at', { ascending: true })
+export async function fetchMenuEventFolders(): Promise<MenuEventFolder[]> {
+  const { data, error } = await supabase
+    .from('menu_event_folders')
+    .select('*')
+    .order('name', { ascending: true })
 
-  if (dishId) q = q.eq('dish_id', dishId)
-
-  const { data, error } = await q
   if (error) throw error
+  return (data ?? []) as MenuEventFolder[]
+}
 
-  return ((data ?? []) as any[]).map((row) => ({
+export async function upsertMenuEventFolder(input: { id?: UUID; name: string }): Promise<MenuEventFolder> {
+  const { data, error } = await supabase
+    .from('menu_event_folders')
+    .upsert({ id: input.id, name: input.name })
+    .select('*')
+    .single()
+
+  if (error) throw error
+  return data as MenuEventFolder
+}
+
+export async function deleteMenuEventFolder(id: UUID): Promise<void> {
+  const { error } = await supabase.from('menu_event_folders').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function fetchMenuEventDays(eventId: UUID): Promise<MenuEventDay[]> {
+  const { data, error } = await supabase
+    .from('menu_event_days')
+    .select('*')
+    .eq('event_id', eventId)
+    .order('day_index', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as MenuEventDay[]
+}
+
+/** Replaces all days for an event with the given set (used when saving the event form). */
+export async function replaceMenuEventDays(
+  eventId: UUID,
+  days: Array<{ day_index: number; calendar_date: string | null }>
+): Promise<MenuEventDay[]> {
+  const { error: delError } = await supabase.from('menu_event_days').delete().eq('event_id', eventId)
+  if (delError) throw delError
+
+  if (days.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('menu_event_days')
+    .insert(days.map((d) => ({ event_id: eventId, day_index: d.day_index, calendar_date: d.calendar_date })))
+    .select('*')
+
+  if (error) throw error
+  return (data ?? []) as MenuEventDay[]
+}
+
+export async function fetchMenuEventMealTypes(eventId: UUID): Promise<MenuEventMealType[]> {
+  const { data, error } = await supabase
+    .from('menu_event_meal_types')
+    .select('*')
+    .eq('event_id', eventId)
+    .order('sort_order', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as MenuEventMealType[]
+}
+
+export async function upsertMenuEventMealType(input: {
+  id?: UUID
+  event_id: UUID
+  key: string
+  label: string
+  sort_order: number
+}): Promise<MenuEventMealType> {
+  const { data, error } = await supabase
+    .from('menu_event_meal_types')
+    .upsert({
+      id: input.id,
+      event_id: input.event_id,
+      key: input.key,
+      label: input.label,
+      sort_order: input.sort_order,
+    })
+    .select('*')
+    .single()
+
+  if (error) throw error
+  return data as MenuEventMealType
+}
+
+export async function deleteMenuEventMealType(id: UUID): Promise<void> {
+  const { error } = await supabase.from('menu_event_meal_types').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function fetchDishIngredients(dishId?: UUID): Promise<DishIngredient[]> {
+  const data = await fetchAllPages<any>((from, to) => {
+    let q = supabase
+      .from('dish_ingredients')
+      .select('*, ingredient:ingredient_products(*)')
+      .order('created_at', { ascending: true })
+      .range(from, to)
+
+    if (dishId) q = q.eq('dish_id', dishId)
+    return q
+  })
+
+  return (data as any[]).map((row) => ({
     ...row,
     quantity_per_portion: Number(row.quantity_per_portion ?? 0),
     ingredient: row.ingredient
@@ -259,7 +356,7 @@ export async function fetchMenuEntries(): Promise<MenuEntry[]> {
 export async function addMenuEntry(params: {
   event_id: UUID
   weekday: number
-  meal_type: MealType
+  meal_type: string
   dish_id: UUID | null
   portions: number
   variant_name?: string | null

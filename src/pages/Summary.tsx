@@ -1,24 +1,50 @@
 import React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Layout } from '../components/Layout'
-import { fetchDishIngredients, fetchDishes, fetchIngredientProducts, fetchMenuEntries, fetchMenuEvents } from '../lib/api'
+import {
+  fetchDishIngredients,
+  fetchDishes,
+  fetchIngredientProducts,
+  fetchMenuEntries,
+  fetchMenuEventDays,
+  fetchMenuEventMealTypes,
+  fetchMenuEvents,
+} from '../lib/api'
 import { computeGrandTotal, computeTotals } from '../lib/calculations'
 import {
+  buildDailyBreakdownFilename,
   buildMenuFilename,
   buildShoppingFilename,
+  exportDailyBreakdownDocx,
   exportMenuDocx,
   exportShoppingListDocx,
 } from '../lib/docxExport'
+import type { MenuEventDay, MenuEventMealType } from '../lib/types'
 import { formatQty, formatRub, mealTypeLabel, shortWeekdayLabel } from '../lib/utils'
 
 const weekdays = [1, 2, 3, 4, 5, 6, 7]
+
+const FALLBACK_DAYS: MenuEventDay[] = weekdays.map((idx) => ({
+  id: `fallback-${idx}`,
+  event_id: '',
+  day_index: idx,
+  calendar_date: null,
+  created_at: '',
+}))
+
+const FALLBACK_MEAL_TYPES: MenuEventMealType[] = [
+  { id: 'fallback-breakfast', event_id: '', key: 'breakfast', label: 'Завтрак', sort_order: 0, created_at: '' },
+  { id: 'fallback-lunch', event_id: '', key: 'lunch', label: 'Обед', sort_order: 1, created_at: '' },
+  { id: 'fallback-dinner', event_id: '', key: 'dinner', label: 'Ужин', sort_order: 2, created_at: '' },
+  { id: 'fallback-late_snack', event_id: '', key: 'late_snack', label: 'Полдник', sort_order: 3, created_at: '' },
+]
 
 export function SummaryPage() {
   const [mode, setMode] = React.useState<'week' | 'day'>('week')
   const [weekday, setWeekday] = React.useState<number>(1)
   const [selectedEventId, setSelectedEventId] = React.useState<string>('')
   const [mealFilter, setMealFilter] = React.useState<'all' | 'breakfast' | 'lunch' | 'dinner'>('all')
-  const [exporting, setExporting] = React.useState<'menu' | 'shopping' | null>(null)
+  const [exporting, setExporting] = React.useState<'menu' | 'shopping' | 'breakdown' | null>(null)
 
   const dishesQ = useQuery({ queryKey: ['dishes'], queryFn: fetchDishes })
   const ingsQ = useQuery({
@@ -28,6 +54,16 @@ export function SummaryPage() {
   const menuQ = useQuery({ queryKey: ['menu_entries'], queryFn: fetchMenuEntries })
   const eventsQ = useQuery({ queryKey: ['menu_events'], queryFn: fetchMenuEvents })
   const ingredientProductsQ = useQuery({ queryKey: ['ingredient_products'], queryFn: fetchIngredientProducts })
+  const eventDaysQ = useQuery({
+    queryKey: ['menu_event_days', selectedEventId],
+    queryFn: () => fetchMenuEventDays(selectedEventId),
+    enabled: !!selectedEventId,
+  })
+  const eventMealTypesQ = useQuery({
+    queryKey: ['menu_event_meal_types', selectedEventId],
+    queryFn: () => fetchMenuEventMealTypes(selectedEventId),
+    enabled: !!selectedEventId,
+  })
 
   React.useEffect(() => {
     const events = eventsQ.data ?? []
@@ -95,6 +131,30 @@ export function SummaryPage() {
         mealFilter,
         rows,
         grandTotal: grand,
+      })
+    } finally {
+      setExporting(null)
+    }
+  }
+
+  async function onExportBreakdown() {
+    try {
+      setExporting('breakdown')
+      const days = eventDaysQ.data?.length ? eventDaysQ.data : FALLBACK_DAYS
+      const mealTypesForExport = eventMealTypesQ.data?.length ? eventMealTypesQ.data : FALLBACK_MEAL_TYPES
+      const eventEntries = (menuQ.data ?? []).filter(
+        (entry) => !selectedEventId || entry.event_id === selectedEventId
+      )
+      await exportDailyBreakdownDocx({
+        filename: buildDailyBreakdownFilename(selectedEvent?.name ?? 'menu'),
+        eventName: selectedEvent?.name ?? 'Мероприятие',
+        guestCount: selectedEvent?.guest_count ?? null,
+        days,
+        mealTypes: mealTypesForExport,
+        menuEntries: eventEntries,
+        dishes: dishesQ.data ?? [],
+        dishIngredients: ingsQ.data ?? [],
+        ingredientProducts: ingredientProductsQ.data ?? [],
       })
     } finally {
       setExporting(null)
@@ -219,6 +279,9 @@ export function SummaryPage() {
             </button>
             <button className="btn-secondary w-full" onClick={onExportShopping} disabled={exporting !== null}>
               {exporting === 'shopping' ? 'Экспорт списка...' : 'Экспорт списка покупок DOCX'}
+            </button>
+            <button className="btn-primary w-full" onClick={onExportBreakdown} disabled={exporting !== null}>
+              {exporting === 'breakdown' ? 'Экспорт по дням...' : 'Экспорт по дням (новый формат)'}
             </button>
           </div>
         </div>

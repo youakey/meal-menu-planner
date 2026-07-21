@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Search, ShoppingCart, Trash2 } from 'lucide-react'
 import { Layout } from '../components/Layout'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { SaveButton } from '../components/SaveButton'
 import { useToast } from '../components/Toast'
 import {
   deleteIngredientProduct,
@@ -10,6 +11,7 @@ import {
   upsertCartItem,
   upsertIngredientProduct,
 } from '../lib/api'
+import { useSavedState } from '../lib/hooks/useSavedState'
 import type { IngredientBaseUnit, IngredientKind, IngredientProduct } from '../lib/types'
 import { formatRub, matchesSearchTokens } from '../lib/utils'
 
@@ -178,6 +180,7 @@ const IngredientEditor = React.memo(function IngredientEditor({
     if (kind === 'volume' && !['l', 'ml'].includes(packageUnit)) setPackageUnit('l')
   }, [kind, packageUnit])
 
+  const saveState = useSavedState()
   const saveMut = useMutation({
     mutationFn: async () => {
       const amount = Number(packageAmount.replace(',', '.'))
@@ -205,11 +208,15 @@ const IngredientEditor = React.memo(function IngredientEditor({
         setPackageAmount('1')
         setPackageUnit('kg')
         setPackagePrice('')
+        saveState.markSaved()
       } else {
         onDone()
       }
     },
-    onError: (e: any) => toast.push(e?.message ?? 'Ошибка сохранения ингредиента.', 'error'),
+    onError: (e: any) => {
+      toast.push(e?.message ?? 'Ошибка сохранения ингредиента.', 'error')
+      saveState.markIdle()
+    },
   })
 
   return (
@@ -223,7 +230,10 @@ const IngredientEditor = React.memo(function IngredientEditor({
           <input
             className="glass-input w-full"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value)
+              saveState.markIdle()
+            }}
             placeholder="Например: Мука"
           />
         </div>
@@ -233,7 +243,10 @@ const IngredientEditor = React.memo(function IngredientEditor({
           <select
             className="glass-input w-full"
             value={kind}
-            onChange={(e) => setKind(e.target.value as IngredientKind)}
+            onChange={(e) => {
+              setKind(e.target.value as IngredientKind)
+              saveState.markIdle()
+            }}
           >
             {kindOptions.map((opt) => (
               <option key={opt.value} value={opt.value} className="bg-[#18161b]">
@@ -249,7 +262,10 @@ const IngredientEditor = React.memo(function IngredientEditor({
             <input
               className="glass-input w-full"
               value={packageAmount}
-              onChange={(e) => setPackageAmount(e.target.value)}
+              onChange={(e) => {
+                setPackageAmount(e.target.value)
+                saveState.markIdle()
+              }}
               inputMode="decimal"
               placeholder="1"
             />
@@ -259,7 +275,10 @@ const IngredientEditor = React.memo(function IngredientEditor({
             <select
               className="glass-input w-full"
               value={packageUnit}
-              onChange={(e) => setPackageUnit(e.target.value as IngredientBaseUnit)}
+              onChange={(e) => {
+                setPackageUnit(e.target.value as IngredientBaseUnit)
+                saveState.markIdle()
+              }}
             >
               {unitOptionsForKind(kind).map((opt) => (
                 <option key={opt.value} value={opt.value} className="bg-[#18161b]">
@@ -275,7 +294,10 @@ const IngredientEditor = React.memo(function IngredientEditor({
           <input
             className="glass-input w-full"
             value={packagePrice}
-            onChange={(e) => setPackagePrice(e.target.value)}
+            onChange={(e) => {
+              setPackagePrice(e.target.value)
+              saveState.markIdle()
+            }}
             inputMode="decimal"
             placeholder="0.00"
           />
@@ -283,10 +305,16 @@ const IngredientEditor = React.memo(function IngredientEditor({
       </div>
 
       <div className="mt-6 flex flex-wrap gap-3">
-        <button className="btn-primary" onClick={() => saveMut.mutate()}>
+        <SaveButton
+          status={saveState.status}
+          onClick={() => {
+            saveState.markSaving()
+            saveMut.mutate()
+          }}
+        >
           <Plus size={16} />
           {initial ? 'Сохранить изменения' : 'Добавить в базу'}
-        </button>
+        </SaveButton>
         {initial && (
           <button className="btn-secondary" onClick={onDone}>
             Отмена

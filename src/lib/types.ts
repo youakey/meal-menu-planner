@@ -25,14 +25,43 @@ export type IngredientProduct = {
   updated_at: string
 }
 
+export type MenuEventType = 'weekly' | 'custom'
+
 export type MenuEvent = {
   id: UUID
   user_id: UUID
   name: string
   notes: string | null
   is_default: boolean
+  folder_id: UUID | null
+  event_type: MenuEventType
+  guest_count: string | null
   created_at: string
   updated_at: string
+}
+
+export type MenuEventFolder = {
+  id: UUID
+  user_id: UUID
+  name: string
+  created_at: string
+}
+
+export type MenuEventDay = {
+  id: UUID
+  event_id: UUID
+  day_index: number
+  calendar_date: string | null
+  created_at: string
+}
+
+export type MenuEventMealType = {
+  id: UUID
+  event_id: UUID
+  key: string
+  label: string
+  sort_order: number
+  created_at: string
 }
 
 export type DishIngredient = {
@@ -47,6 +76,7 @@ export type DishIngredient = {
   ingredient?: IngredientProduct | null
 }
 
+/** @deprecated meal types are now per-event custom rows (menu_event_meal_types); kept for the legacy default set */
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'late_snack'
 
 export type MenuItemType = 'dish' | 'ingredient'
@@ -56,7 +86,7 @@ export type MenuEntry = {
   user_id: UUID
   event_id: UUID
   weekday: number
-  meal_type: MealType
+  meal_type: string
   dish_id: UUID | null
   portions: number
   variant_name: string | null
