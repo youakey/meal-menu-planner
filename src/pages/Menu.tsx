@@ -667,44 +667,52 @@ function MenuEntryCard({
  */
 function useDropdownAnchorStyle(
   open: boolean,
-  anchorRef: React.RefObject<HTMLElement | null>
+  anchorRef: React.RefObject<HTMLElement | null>,
+  panelRef: React.RefObject<HTMLElement | null>
 ): React.CSSProperties | undefined {
   const [style, setStyle] = React.useState<React.CSSProperties | undefined>(undefined)
 
-  React.useEffect(() => {
+  const recompute = React.useCallback(() => {
+    const el = anchorRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const margin = 8
+    // Use the panel's real rendered height once mounted (it may hold just one
+    // result) instead of assuming the worst case (max-h-[60vh]) — otherwise a
+    // short list gets shoved far above the input to make room it never needs.
+    const panelHeight = panelRef.current?.getBoundingClientRect().height ?? 0
+    let top = rect.bottom + margin
+    if (panelHeight && top + panelHeight + margin > window.innerHeight) {
+      top = Math.max(margin, window.innerHeight - panelHeight - margin)
+    }
+
+    setStyle({
+      position: 'fixed',
+      top,
+      left: rect.left,
+      width: rect.width,
+    })
+  }, [anchorRef, panelRef])
+
+  React.useLayoutEffect(() => {
     if (!open) {
       setStyle(undefined)
       return
     }
 
-    function recompute() {
-      const el = anchorRef.current
-      if (!el) return
-      const rect = el.getBoundingClientRect()
-      const maxHeightPx = window.innerHeight * 0.6
-      const margin = 8
-      const desiredTop = rect.bottom + margin
-      const top =
-        desiredTop + maxHeightPx + margin > window.innerHeight
-          ? Math.max(margin, window.innerHeight - maxHeightPx - margin)
-          : desiredTop
-
-      setStyle({
-        position: 'fixed',
-        top,
-        left: rect.left,
-        width: rect.width,
-      })
-    }
-
     recompute()
+    // Second pass once the panel has actually mounted, so we can measure its
+    // real height (the first pass above runs before it exists in the DOM).
+    const raf = requestAnimationFrame(recompute)
+
     window.addEventListener('resize', recompute)
     window.addEventListener('scroll', recompute, true)
     return () => {
+      cancelAnimationFrame(raf)
       window.removeEventListener('resize', recompute)
       window.removeEventListener('scroll', recompute, true)
     }
-  }, [open, anchorRef])
+  }, [open, recompute])
 
   return style
 }
@@ -719,11 +727,12 @@ function SearchableDishSelect({
   onChange: (dishId: string) => void
 }) {
   const wrapperRef = React.useRef<HTMLDivElement | null>(null)
+  const panelRef = React.useRef<HTMLDivElement | null>(null)
   const selected = dishes.find((item) => item.id === value) ?? null
 
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState(selected?.name ?? '')
-  const dropdownStyle = useDropdownAnchorStyle(open, wrapperRef)
+  const dropdownStyle = useDropdownAnchorStyle(open, wrapperRef, panelRef)
 
   React.useEffect(() => {
     if (!open) setQuery(selected?.name ?? '')
@@ -761,6 +770,7 @@ function SearchableDishSelect({
         dropdownStyle &&
         createPortal(
           <div
+            ref={panelRef}
             style={dropdownStyle}
             className="z-50 max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#18121d]/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl"
           >
@@ -805,6 +815,7 @@ function SearchableIngredientProductSelect({
   onChange: (id: string) => void
 }) {
   const wrapperRef = React.useRef<HTMLDivElement | null>(null)
+  const panelRef = React.useRef<HTMLDivElement | null>(null)
   const sorted = React.useMemo(
     () => [...ingredientProducts].sort((a, b) => a.name.localeCompare(b.name, 'ru')),
     [ingredientProducts]
@@ -813,7 +824,7 @@ function SearchableIngredientProductSelect({
 
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState(selected?.name ?? '')
-  const dropdownStyle = useDropdownAnchorStyle(open, wrapperRef)
+  const dropdownStyle = useDropdownAnchorStyle(open, wrapperRef, panelRef)
 
   React.useEffect(() => {
     if (!open) setQuery(selected?.name ?? '')
@@ -845,6 +856,7 @@ function SearchableIngredientProductSelect({
         dropdownStyle &&
         createPortal(
           <div
+            ref={panelRef}
             style={dropdownStyle}
             className="z-50 max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#18121d]/95 p-2 shadow-[0_18px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl"
           >
