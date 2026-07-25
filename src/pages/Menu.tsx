@@ -740,11 +740,14 @@ function SearchableDishSelect({
 
   React.useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (!wrapperRef.current) return
-      if (!wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setQuery(selected?.name ?? '')
-      }
+      const target = e.target as Node
+      // The panel is portaled to document.body, so it's outside wrapperRef's DOM
+      // subtree — without this check every click on a result would look like an
+      // "outside" click, closing the list before its onClick can fire.
+      if (wrapperRef.current?.contains(target)) return
+      if (panelRef.current?.contains(target)) return
+      setOpen(false)
+      setQuery(selected?.name ?? '')
     }
 
     document.addEventListener('mousedown', onClickOutside)
@@ -832,10 +835,11 @@ function SearchableIngredientProductSelect({
 
   React.useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (!wrapperRef.current?.contains(e.target as Node)) {
-        setOpen(false)
-        setQuery(selected?.name ?? '')
-      }
+      const target = e.target as Node
+      if (wrapperRef.current?.contains(target)) return
+      if (panelRef.current?.contains(target)) return
+      setOpen(false)
+      setQuery(selected?.name ?? '')
     }
     document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
